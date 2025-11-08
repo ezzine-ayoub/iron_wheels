@@ -15,7 +15,6 @@ import {
 
 import {colors} from './theme';
 import {authService} from '../services/authService';
-import ErrorMessage from '../components/ErrorMessage';
 import ChangePasswordModal from '../components/ChangePasswordModal';
 
 interface LoginScreenProps {
@@ -26,16 +25,16 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
-    const [errorMessage, setErrorMessage] = useState(''); // 🆕 Message d'erreur
-    const [showPasswordModal, setShowPasswordModal] = useState(false); // 🆕 Modal changement MDP
+    const [showPasswordModal, setShowPasswordModal] = useState(false);
     const [responseRequest, setResponseRequest] = useState({});
 
     const handleLogin = async () => {
-        // Réinitialiser l'erreur
-        setErrorMessage('');
-
         if (!email || !password) {
-            setErrorMessage('Veuillez entrer votre email et mot de passe');
+            Alert.alert(
+                'Missing Information',
+                'Please enter your email and password',
+                [{text: 'OK'}]
+            );
             return;
         }
 
@@ -44,27 +43,26 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
         try {
             const result = await authService.login({email, password});
             setResponseRequest(result);
-            // 🆕 Vérifier si l'utilisateur doit changer son mot de passe
+            
+            // Check if user must change password
             if (!result.passwordChanged) {
-                console.log('⚠️ passwordChanged = false, affichage du modal...');
-                setShowPasswordModal(true); // Afficher le modal SANS redirection
+                console.log('⚠️ passwordChanged = false, showing modal...');
+                setShowPasswordModal(true);
                 setLoading(false);
-                return; // ⚠️ NE PAS rediriger vers Home
+                return;
             }
 
-            // ✅ Mot de passe déjà changé, redirection normale
-            console.log('✅ passwordChanged = true, redirection vers Home');
+            // Password already changed, normal redirection
+            console.log('✅ passwordChanged = true, redirecting to Home');
             onLoginSuccess();
         } catch (error: any) {
-            const errorMsg = error.message || 'Identifiants incorrects. Veuillez réessayer.';
+            const errorMsg = error.message || 'Incorrect credentials. Please try again.';
 
-            // 🆕 Afficher l'erreur dans l'UI ET dans une alerte
-            setErrorMessage(errorMsg);
-
+            // Show only Alert
             Alert.alert(
-                '❌ Échec de connexion',
+                'Login Failed',
                 errorMsg,
-                [{text: 'OK', onPress: () => setErrorMessage('')}]
+                [{text: 'OK'}]
             );
         } finally {
             setLoading(false);
@@ -72,13 +70,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
     };
 
     const handleForgotPassword = () => {
-        console.log("ayoub ezzine")
         Alert.alert(
             'Forgot Password',
             'Please contact your administrator to reset your password.',
             [{text: 'OK'}]
         );
-
     };
 
     return (
@@ -135,15 +131,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
                             />
                         </View>
 
-                        {/* 🆕 Affichage du message d'erreur */}
-                        {errorMessage ? (
-                            <ErrorMessage
-                                message={errorMessage}
-                                type="error"
-                                onDismiss={() => setErrorMessage('')}
-                            />
-                        ) : null}
-
                         <TouchableOpacity
                             style={[styles.button, styles.zwinButton, loading && styles.buttonDisabled]}
                             onPress={handleLogin}
@@ -167,15 +154,15 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
                 </KeyboardAvoidingView>
             </ImageBackground>
 
-            {/* 🆕 Modal de changement de mot de passe obligatoire */}
+            {/* Mandatory password change modal */}
             <ChangePasswordModal
                 visible={showPasswordModal}
                 oldPasswordChanged={password}
                 response={responseRequest}
                 onPasswordChanged={() => {
-                    console.log('✅ Mot de passe changé, redirection vers Home');
+                    console.log('✅ Password changed, redirecting to Home');
                     setShowPasswordModal(false);
-                    onLoginSuccess(); // ✅ Maintenant on peut rediriger
+                    onLoginSuccess();
                 }}
             />
         </>

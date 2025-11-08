@@ -1,4 +1,4 @@
-// AuthStorageService - Stockage avec react-native-sqlite-storage
+// AuthStorageService - Storage with react-native-sqlite-storage
 import SQLite from 'react-native-sqlite-storage';
 
 // Enable debugging
@@ -17,37 +17,37 @@ class AuthStorageService {
   private isInitializing = false;
   private initPromise: Promise<void> | null = null;
   
-  // 💾 CACHE EN MÉMOIRE pour réduire les lectures
+  // 💾 MEMORY CACHE to reduce reads
   private cache: Map<string, any> = new Map();
 
-  // ==================== INITIALISATION ====================
+  // ==================== INITIALIZATION ====================
   
   async initDatabase(): Promise<void> {
-    // Si déjà initialisé, retourner immédiatement
+    // If already initialized, return immediately
     if (this.db) {
       return;
     }
 
-    // Si en cours d'initialisation, attendre la promesse existante
+    // If initialization in progress, wait for existing promise
     if (this.isInitializing && this.initPromise) {
-      console.log('⏳ Initialisation déjà en cours, attente...');
+      console.log('⏳ Initialization already in progress, waiting...');
       return this.initPromise;
     }
 
-    // Marquer comme en cours d'initialisation
+    // Mark as initializing
     this.isInitializing = true;
 
     this.initPromise = (async () => {
       try {
-        console.log('💾 Ouverture de la base de données auth...');
+        console.log('💾 Opening auth database...');
 
-        // Ouvrir la base de données
+        // Open database
         this.db = await SQLite.openDatabase({
           name: this.dbName,
           location: 'default',
         });
 
-        // Créer la table si elle n'existe pas
+        // Create table if it doesn't exist
         await this.db.executeSql(`
           CREATE TABLE IF NOT EXISTS auth_storage (
             key TEXT PRIMARY KEY NOT NULL,
@@ -56,10 +56,10 @@ class AuthStorageService {
           );
         `);
 
-        console.log('✅ Base de données auth initialisée avec succès');
+        console.log('✅ Auth database initialized successfully');
 
       } catch (error) {
-        console.error('❌ Erreur initialisation DB auth:', error);
+        console.log('❌ Error initializing auth DB:', error);
         this.db = null;
         throw error;
       }
@@ -79,23 +79,23 @@ class AuthStorageService {
     }
   }
 
-  // ==================== OPÉRATIONS CRUD ====================
+  // ==================== CRUD OPERATIONS ====================
 
   /**
-   * ✅ Sauvegarde des données
+   * ✅ Save data
    */
   async save(key: string, value: any): Promise<boolean> {
     try {
-      // 🔒 OPTIMISATION: Vérifier le cache
+      // 🔒 OPTIMIZATION: Check cache
       const cachedValue = this.cache.get(key);
       
-      // Comparer avec le cache
+      // Compare with cache
       if (cachedValue !== undefined) {
         const cachedJson = JSON.stringify(cachedValue);
         const newJson = JSON.stringify(value);
         
         if (cachedJson === newJson) {
-          // Valeur identique, pas besoin de sauvegarder
+          // Identical value, no need to save
           return true;
         }
       }
@@ -103,7 +103,7 @@ class AuthStorageService {
       await this.ensureDbInitialized();
 
       if (!this.db) {
-        throw new Error('Base de données non initialisée');
+        throw new Error('Database not initialized');
       }
 
       const dataToStore = {
@@ -116,23 +116,23 @@ class AuthStorageService {
         [key, JSON.stringify(dataToStore), Date.now()]
       );
 
-      // Mettre à jour le cache
+      // Update cache
       this.cache.set(key, value);
 
       return true;
 
     } catch (error) {
-      console.error(`❌ Erreur sauvegarde ${key}:`, error);
+      console.log(`❌ Error saving ${key}:`, error);
       return false;
     }
   }
 
   /**
-   * ✅ Récupération des données (avec cache)
+   * ✅ Retrieve data (with cache)
    */
   async get(key: string): Promise<any | null> {
     try {
-      // 💾 Vérifier le cache d'abord
+      // 💾 Check cache first
       if (this.cache.has(key)) {
         return this.cache.get(key);
       }
@@ -140,7 +140,7 @@ class AuthStorageService {
       await this.ensureDbInitialized();
 
       if (!this.db) {
-        throw new Error('Base de données non initialisée');
+        throw new Error('Database not initialized');
       }
 
       const results = await this.db.executeSql(
@@ -155,26 +155,26 @@ class AuthStorageService {
       const row = results[0].rows.item(0);
       const parsed = JSON.parse(row.value);
       
-      // Mettre en cache
+      // Cache it
       this.cache.set(key, parsed.data);
       
       return parsed.data;
 
     } catch (error) {
-      console.error(`❌ Erreur récupération ${key}:`, error);
+      console.log(`❌ Error retrieving ${key}:`, error);
       return null;
     }
   }
 
   /**
-   * ✅ Suppression d'une clé
+   * ✅ Delete a key
    */
   async remove(key: string): Promise<boolean> {
     try {
       await this.ensureDbInitialized();
 
       if (!this.db) {
-        throw new Error('Base de données non initialisée');
+        throw new Error('Database not initialized');
       }
 
       const result = await this.db.executeSql(
@@ -182,52 +182,52 @@ class AuthStorageService {
         [key]
       );
 
-      // Supprimer du cache
+      // Remove from cache
       this.cache.delete(key);
 
-      console.log('🗑️ Clé supprimée:', key);
+      console.log('🗑️ Key deleted:', key);
       return result[0].rowsAffected > 0;
 
     } catch (error) {
-      console.error(`❌ Erreur suppression ${key}:`, error);
+      console.log(`❌ Error deleting ${key}:`, error);
       return false;
     }
   }
 
   /**
-   * ✅ Suppression de toutes les données
+   * ✅ Delete all data
    */
   async clear(): Promise<boolean> {
     try {
       await this.ensureDbInitialized();
 
       if (!this.db) {
-        throw new Error('Base de données non initialisée');
+        throw new Error('Database not initialized');
       }
 
       await this.db.executeSql('DELETE FROM auth_storage');
       
-      // Vider le cache
+      // Clear cache
       this.cache.clear();
       
-      console.log('🧹 Toutes les données auth supprimées');
+      console.log('🧹 All auth data deleted');
       return true;
 
     } catch (error) {
-      console.error('❌ Erreur vidage auth storage:', error);
+      console.log('❌ Error clearing auth storage:', error);
       return false;
     }
   }
 
   /**
-   * ✅ Liste toutes les clés
+   * ✅ List all keys
    */
   async getAllKeys(): Promise<string[]> {
     try {
       await this.ensureDbInitialized();
 
       if (!this.db) {
-        throw new Error('Base de données non initialisée');
+        throw new Error('Database not initialized');
       }
 
       const results = await this.db.executeSql(
@@ -242,20 +242,20 @@ class AuthStorageService {
       return keys;
 
     } catch (error) {
-      console.error('❌ Erreur récupération clés:', error);
+      console.log('❌ Error retrieving keys:', error);
       return [];
     }
   }
 
   /**
-   * ✅ Obtenir la taille de la base de données
+   * ✅ Get database size
    */
   async getStorageSize(): Promise<{ count: number; size: string }> {
     try {
       await this.ensureDbInitialized();
 
       if (!this.db) {
-        throw new Error('Base de données non initialisée');
+        throw new Error('Database not initialized');
       }
 
       const results = await this.db.executeSql(
@@ -284,20 +284,20 @@ class AuthStorageService {
       };
 
     } catch (error) {
-      console.error('❌ Erreur calcul taille:', error);
+      console.log('❌ Error calculating size:', error);
       return { count: 0, size: '0 bytes' };
     }
   }
 
   /**
-   * ✅ Vérifier si une clé existe
+   * ✅ Check if a key exists
    */
   async has(key: string): Promise<boolean> {
     try {
       await this.ensureDbInitialized();
 
       if (!this.db) {
-        throw new Error('Base de données non initialisée');
+        throw new Error('Database not initialized');
       }
 
       const results = await this.db.executeSql(
@@ -308,20 +308,20 @@ class AuthStorageService {
       return results[0].rows.item(0).count > 0;
 
     } catch (error) {
-      console.error(`❌ Erreur vérification clé ${key}:`, error);
+      console.log(`❌ Error checking key ${key}:`, error);
       return false;
     }
   }
 
   /**
-   * ✅ Obtenir toutes les données (debug)
+   * ✅ Get all data (debug)
    */
   async getAllData(): Promise<Record<string, any>> {
     try {
       await this.ensureDbInitialized();
 
       if (!this.db) {
-        throw new Error('Base de données non initialisée');
+        throw new Error('Database not initialized');
       }
 
       const results = await this.db.executeSql(
@@ -336,7 +336,7 @@ class AuthStorageService {
           const parsed = JSON.parse(row.value);
           data[row.key] = parsed.data;
         } catch (parseError) {
-          console.error(`⚠️ Erreur parsing ${row.key}:`, parseError);
+          console.log(`⚠️ Error parsing ${row.key}:`, parseError);
           data[row.key] = null;
         }
       }
@@ -344,20 +344,20 @@ class AuthStorageService {
       return data;
 
     } catch (error) {
-      console.error('❌ Erreur récupération toutes données:', error);
+      console.log('❌ Error retrieving all data:', error);
       return {};
     }
   }
 
   /**
-   * ✅ Nettoyer les anciennes données (optionnel - pour maintenance)
+   * ✅ Clean old data (optional - for maintenance)
    */
   async cleanOldData(daysOld: number = 365): Promise<number> {
     try {
       await this.ensureDbInitialized();
 
       if (!this.db) {
-        throw new Error('Base de données non initialisée');
+        throw new Error('Database not initialized');
       }
 
       const cutoffTimestamp = Date.now() - (daysOld * 24 * 60 * 60 * 1000);
@@ -370,36 +370,36 @@ class AuthStorageService {
       const changes = results[0].rowsAffected;
 
       if (changes > 0) {
-        console.log(`🧹 ${changes} anciennes données supprimées (> ${daysOld} jours)`);
+        console.log(`🧹 ${changes} old data entries deleted (> ${daysOld} days)`);
       }
 
       return changes;
 
     } catch (error) {
-      console.error('❌ Erreur nettoyage anciennes données:', error);
+      console.log('❌ Error cleaning old data:', error);
       return 0;
     }
   }
 
   /**
-   * ✅ Fermer la connexion (à utiliser seulement si vraiment nécessaire)
+   * ✅ Close connection (use only if really necessary)
    */
   async closeDatabase(): Promise<void> {
     if (this.db) {
       try {
         await this.db.close();
         this.db = null;
-        console.log('🔒 Base de données auth fermée');
+        console.log('🔒 Auth database closed');
       } catch (error) {
-        console.error('❌ Erreur fermeture DB:', error);
+        console.log('❌ Error closing DB:', error);
       }
     }
   }
 
-  // ==================== COMPATIBILITÉ AsyncStorage ====================
+  // ==================== AsyncStorage COMPATIBILITY ====================
   
   /**
-   * ✅ Alias pour compatibilité avec AsyncStorage
+   * ✅ Alias for AsyncStorage compatibility
    */
   async setItem(key: string, value: string): Promise<void> {
     await this.save(key, value);
@@ -424,12 +424,12 @@ class AuthStorageService {
 // Export singleton
 export const authStorageService = new AuthStorageService();
 
-// Auto-initialisation silencieuse (une seule fois au démarrage de l'app)
+// Silent auto-initialization (once at app startup)
 (async () => {
   try {
     await authStorageService.initDatabase();
   } catch (error) {
-    console.error('❌ Erreur auto-initialisation authStorageService:', error);
+    console.log('❌ Error auto-initializing authStorageService:', error);
   }
 })();
 

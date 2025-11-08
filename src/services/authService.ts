@@ -5,36 +5,45 @@ import authStorageService from './authStorageService';
 const API_BASE_URL = 'http://192.168.1.19:3000/api/v1';
 
 // Session expiration: 7 days in milliseconds
-const SESSION_EXPIRATION_TIME = 7 * 24 * 60 * 60 * 1000; // 7 jours
+const SESSION_EXPIRATION_TIME = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-// Access token expiration: 1 hour (55 minutes pour refresh avant expiration)
+// Access token expiration: 1 hour (55 minutes for refresh before expiration)
 const ACCESS_TOKEN_EXPIRATION = 55 * 60 * 1000; // 55 minutes
 
-// Interface pour la réponse de l'API
+// Interface for API response
 interface ApiLoginResponse {
     accessToken: string;
     refreshToken: string;
     email: string;
+    name: string;
+    phone: string;
+    personal_No: string;
     id: string;
     passwordChanged: boolean;
     profileCompleted: boolean;
 }
 
-// Interface pour la session stockée
+// Interface for stored session
 interface UserAuthSession {
     id: string;
     accessToken: string;
     refreshToken: string;
     email: string;
+    name: string;
+    phone: string;
+    personal_No: string;
     passwordChanged: boolean;
     profileCompleted: boolean;
     timestamp: number;
-    tokenRefreshedAt: number; // 🆕 Date du dernier refresh du token
+    tokenRefreshedAt: number; // 🆕 Date of last token refresh
 }
 
 export interface AuthUser {
     id: string;
     email: string;
+    name: string;
+    phone: string;
+    personal_No: string;
     passwordChanged: boolean;
     profileCompleted: boolean;
 }
@@ -44,6 +53,9 @@ export interface AuthResponse {
     accessToken: string;
     refreshToken: string;
     email: string;
+    name: string;
+    phone: string;
+    personal_No: string;
     passwordChanged: boolean;
     profileCompleted: boolean;
 }
@@ -64,14 +76,14 @@ export interface ChangePasswordResponse {
     message: string;
 }
 
-// Configuration SQLite Storage - Sessions illimitées
+// SQLite Storage Configuration - Unlimited sessions
 const STORAGE_KEYS = {
     SESSION: '@iron_wheels_session',
     CREDENTIALS: '@iron_wheels_credentials',
     USER_INFO: '@iron_wheels_user_info',
 };
 
-// 🆕 Callback pour notifier l'expiration de session
+// 🆕 Callback to notify session expiration
 type SessionExpiredCallback = () => void;
 let sessionExpiredCallback: SessionExpiredCallback | null = null;
 
@@ -82,7 +94,7 @@ async function saveToStorage(key: string, value: any): Promise<boolean> {
         await authStorageService.save(key, value);
         return true;
     } catch (error) {
-        console.error(`❌ Erreur sauvegarde Storage ${key}:`, error);
+        console.log(`❌ Error saving to Storage ${key}:`, error);
         return false;
     }
 }
@@ -91,38 +103,38 @@ async function getFromStorage(key: string): Promise<any | null> {
     try {
         return await authStorageService.get(key);
     } catch (error) {
-        console.error(`❌ Erreur récupération Storage ${key}:`, error);
+        console.log(`❌ Error retrieving from Storage ${key}:`, error);
         return null;
     }
 }
 
-// ==================== SERVICE D'AUTHENTIFICATION ====================
+// ==================== AUTHENTICATION SERVICE ====================
 
 export const authService = {
     /**
-     * 🆕 ENREGISTRER: Callback pour expiration de session
+     * 🆕 REGISTER: Callback for session expiration
      */
     onSessionExpired(callback: SessionExpiredCallback): void {
         sessionExpiredCallback = callback;
-        console.log('✅ Callback d\'expiration de session enregistré');
+        console.log('✅ Session expiration callback registered');
     },
 
     /**
-     * 🆕 NOTIFIER: Expiration de session
+     * 🆕 NOTIFY: Session expiration
      */
     notifySessionExpired(): void {
         if (sessionExpiredCallback) {
-            console.log('📢 Notification: Session expirée');
+            console.log('📢 Notification: Session expired');
             sessionExpiredCallback();
         }
     },
 
     /**
-     * ✅ LOGIN: Authentification avec l'API
+     * ✅ LOGIN: Authentication with API
      */
     async login(credentials: LoginCredentials): Promise<AuthResponse> {
         try {
-            console.log('🔐 Tentative de connexion...', credentials.email);
+            console.log('🔐 Login attempt...', credentials.email);
 
             const response = await fetch(`${API_BASE_URL}/auth/login`, {
                 method: 'POST',
@@ -134,87 +146,96 @@ export const authService = {
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
                 
-                // Gestion spécifique des erreurs de login
+                // Specific handling of login errors
                 if (response.status === 401) {
-                    throw new Error('Email ou mot de passe incorrect');
+                    throw new Error('Incorrect email or password');
                 }
                 
                 if (response.status === 400) {
-                    throw new Error('Données de connexion invalides');
+                    throw new Error('Invalid login credentials');
                 }
                 
                 if (response.status === 500) {
-                    throw new Error('Erreur serveur, veuillez réessayer');
+                    throw new Error('Server error, please try again');
                 }
                 
-                // Message par défaut
-                throw new Error(errorData.message || 'Échec de connexion');
+                // Default message
+                throw new Error(errorData.message || 'Login failed');
             }
 
             const data: ApiLoginResponse = await response.json();
 
-            // 🆕 Si passwordChanged === false, NE PAS sauvegarder la session
+            // 🆕 If passwordChanged === false, DO NOT save the session
             if (!data.passwordChanged) {
-                console.log('⚠️ passwordChanged = false, session NON sauvegardée');
+                console.log('⚠️ passwordChanged = false, session NOT saved');
                 
-                // Sauvegarder SEULEMENT les credentials temporaires pour changement MDP
+                // Save ONLY temporary credentials for password change
                 await saveToStorage(STORAGE_KEYS.CREDENTIALS, {
                     email: credentials.email,
                     password: credentials.password,
                 });
                 
-                // Retourner les données sans sauvegarder la session
+                // Return data without saving session
                 return {
                     id: data.id,
                     accessToken: data.accessToken,
                     refreshToken: data.refreshToken,
                     email: data.email,
+                    name: data.name,
+                    phone: data.phone,
+                    personal_No: data.personal_No,
                     passwordChanged: data.passwordChanged,
                     profileCompleted: data.profileCompleted,
                 };
             }
 
-            // ✅ passwordChanged === true, sauvegarder la session normalement
-            console.log('✅ passwordChanged = true, sauvegarde de la session...');
+            // ✅ passwordChanged === true, save session normally
+            console.log('✅ passwordChanged = true, saving session...');
             
-            // Créer la session
+            // Create session
             const sessionData: UserAuthSession = {
                 id: data.id,
                 accessToken: data.accessToken,
                 refreshToken: data.refreshToken,
                 email: data.email,
+                name: data.name,
+                phone: data.phone,
+                personal_No: data.personal_No,
                 passwordChanged: data.passwordChanged,
                 profileCompleted: data.profileCompleted,
                 timestamp: Date.now(),
-                tokenRefreshedAt: Date.now(), // 🆕 Initialiser la date de refresh
+                tokenRefreshedAt: Date.now(), // 🆕 Initialize refresh date
             };
 
-            // Sauvegarder dans le storage
+            // Save to storage
             await saveToStorage(STORAGE_KEYS.SESSION, sessionData);
             await saveToStorage(STORAGE_KEYS.CREDENTIALS, {
                 email: credentials.email,
                 password: credentials.password,
             });
 
-            console.log('✅ Connexion réussie');
+            console.log('✅ Login successful');
 
             return {
                 id: data.id,
                 accessToken: data.accessToken,
                 refreshToken: data.refreshToken,
                 email: data.email,
+                name: data.name,
+                phone: data.phone,
+                personal_No: data.personal_No,
                 passwordChanged: data.passwordChanged,
                 profileCompleted: data.profileCompleted,
             };
 
         } catch (error) {
-            console.error('❌ Erreur login:', error);
+            console.log('❌ Login error:', error);
             throw error;
         }
     },
 
     /**
-     * ✅ VÉRIFICATION: Session authentifiée
+     * ✅ CHECK: Authenticated session
      */
     async isAuthenticated(): Promise<boolean> {
         try {
@@ -224,30 +245,30 @@ export const authService = {
                 return false;
             }
 
-            // Vérifier si la session a expiré (7 jours)
+            // Check if session has expired (7 days)
             const currentTime = Date.now();
             const sessionAge = currentTime - sessionData.timestamp;
             
             if (sessionAge > SESSION_EXPIRATION_TIME) {
-                console.log('⏰ Session expirée après 7 jours, déconnexion automatique');
+                console.log('⏰ Session expired after 7 days, automatic logout');
                 await this.logout();
                 return false;
             }
 
             return true;
         } catch (error) {
-            console.error('❌ Erreur isAuthenticated:', error);
+            console.log('❌ Error in isAuthenticated:', error);
             return false;
         }
     },
 
     /**
-     * ✅ RÉCUPÉRATION: Données d'auth
+     * ✅ RETRIEVE: Auth data
      */
     async getStoredAuthData(): Promise<AuthResponse | null> {
         try {
             const sessionData = await getFromStorage(STORAGE_KEYS.SESSION);
-            
+            console.log(sessionData)
             if (!sessionData) {
                 return null;
             }
@@ -257,18 +278,21 @@ export const authService = {
                 accessToken: sessionData.accessToken,
                 refreshToken: sessionData.refreshToken,
                 email: sessionData.email,
+                name: sessionData.name,
+                phone: sessionData.phone,
+                personal_No: sessionData.personal_No,
                 passwordChanged: sessionData.passwordChanged,
                 profileCompleted: sessionData.profileCompleted,
             };
 
         } catch (error) {
-            console.error('❌ Erreur getStoredAuthData:', error);
+            console.log('❌ Error in getStoredAuthData:', error);
             return null;
         }
     },
 
     /**
-     * ✅ UTILISATEUR: Récupération
+     * ✅ USER: Retrieve current user
      */
     async getCurrentUser(): Promise<AuthUser | null> {
         try {
@@ -281,30 +305,33 @@ export const authService = {
             return {
                 id: authData.id,
                 email: authData.email,
+                name: authData.name,
+                phone: authData.phone,
+                personal_No: authData.personal_No,
                 passwordChanged: authData.passwordChanged,
                 profileCompleted: authData.profileCompleted,
             };
         } catch (error) {
-            console.error('❌ Erreur getCurrentUser:', error);
+            console.log('❌ Error in getCurrentUser:', error);
             return null;
         }
     },
 
     /**
-     * ✅ TOKEN: Récupération access token
+     * ✅ TOKEN: Retrieve access token
      */
     async getAccessToken(): Promise<string | null> {
         try {
             const authData = await this.getStoredAuthData();
             return authData?.accessToken || null;
         } catch (error) {
-            console.error('❌ Erreur getAccessToken:', error);
+            console.log('❌ Error in getAccessToken:', error);
             return null;
         }
     },
 
     /**
-     * ✅ SESSION: Temps restant avant expiration
+     * ✅ SESSION: Time remaining before expiration
      */
     async getSessionTimeRemaining(): Promise<number> {
         try {
@@ -320,13 +347,13 @@ export const authService = {
             
             return Math.max(0, timeRemaining);
         } catch (error) {
-            console.error('❌ Erreur getSessionTimeRemaining:', error);
+            console.log('❌ Error in getSessionTimeRemaining:', error);
             return 0;
         }
     },
 
     /**
-     * ✅ SESSION: Jours restants avant expiration
+     * ✅ SESSION: Days remaining before expiration
      */
     async getDaysUntilExpiration(): Promise<number> {
         try {
@@ -334,13 +361,13 @@ export const authService = {
             const daysRemaining = Math.floor(timeRemaining / (24 * 60 * 60 * 1000));
             return daysRemaining;
         } catch (error) {
-            console.error('❌ Erreur getDaysUntilExpiration:', error);
+            console.log('❌ Error in getDaysUntilExpiration:', error);
             return 0;
         }
     },
 
     /**
-     * ✅ VÉRIFICATION: Session valide
+     * ✅ CHECK: Valid session
      */
     async isSessionValid(): Promise<boolean> {
         try {
@@ -350,12 +377,12 @@ export const authService = {
                 return false;
             }
 
-            // Vérifier si la session a expiré (7 jours)
+            // Check if session has expired (7 days)
             const currentTime = Date.now();
             const sessionAge = currentTime - sessionData.timestamp;
             
             if (sessionAge > SESSION_EXPIRATION_TIME) {
-                console.log('⏰ Session expirée après 7 jours');
+                console.log('⏰ Session expired after 7 days');
                 await this.logout();
                 return false;
             }
@@ -363,13 +390,13 @@ export const authService = {
             return true;
 
         } catch (error) {
-            console.error('❌ Erreur isSessionValid:', error);
+            console.log('❌ Error in isSessionValid:', error);
             return false;
         }
     },
 
     /**
-     * ✅ DÉCONNEXION: Nettoyage
+     * ✅ LOGOUT: Cleanup
      */
     async logout(): Promise<void> {
         try {
@@ -379,15 +406,15 @@ export const authService = {
                 STORAGE_KEYS.USER_INFO,
             ]);
 
-            console.log('✅ Déconnexion réussie');
+            console.log('✅ Logout successful');
 
         } catch (error) {
-            console.error('❌ Erreur logout:', error);
+            console.log('❌ Logout error:', error);
         }
     },
 
     /**
-     * 🆕 CHANGEMENT DE MOT DE PASSE
+     * 🆕 CHANGE PASSWORD
      */
     async changePassword(payload: ChangePasswordPayload): Promise<ChangePasswordResponse> {
         try {
@@ -396,7 +423,7 @@ export const authService = {
             const accessToken = payload.response?.accessToken;
             
             if (!accessToken) {
-                throw new Error('Token non disponible');
+                throw new Error('Token not available');
             }
 
             const response = await fetch(`${API_BASE_URL}/auth/change-password`, {
@@ -415,26 +442,29 @@ export const authService = {
                 const errorData = await response.json().catch(() => ({}));
                 
                 if (response.status === 401) {
-                    throw new Error('Ancien mot de passe incorrect');
+                    throw new Error('Incorrect old password');
                 }
                 
                 if (response.status === 400) {
-                    throw new Error('Nouveau mot de passe invalide');
+                    throw new Error('Invalid new password');
                 }
                 
-                throw new Error(errorData.message || 'Échec du changement de mot de passe');
+                throw new Error(errorData.message || 'Password change failed');
             }
 
             const data = await response.json();
             
-            // 🆕 MAINTENANT sauvegarder la session complète avec passwordChanged = true
+            // 🆕 NOW save complete session with passwordChanged = true
             if (payload.response) {
                 const sessionData: UserAuthSession = {
                     id: payload.response.id,
                     accessToken: payload.response.accessToken,
                     refreshToken: payload.response.refreshToken,
                     email: payload.response.email,
-                    passwordChanged: true, // 🆕 Marquer comme changé
+                    name: payload.response.name,
+                    phone: payload.response.phone,
+                    personal_No: payload.response.personal_No,
+                    passwordChanged: true, // 🆕 Mark as changed
                     profileCompleted: payload.response.profileCompleted,
                     timestamp: Date.now(),
                     tokenRefreshedAt: Date.now(),
@@ -442,62 +472,62 @@ export const authService = {
                 
                 await saveToStorage(STORAGE_KEYS.SESSION, sessionData);
                 
-                // Mettre à jour aussi les credentials avec le nouveau mot de passe
+                // Also update credentials with new password
                 await saveToStorage(STORAGE_KEYS.CREDENTIALS, {
                     email: payload.response.email,
-                    password: payload.newPassword, // 🆕 Nouveau mot de passe
+                    password: payload.newPassword, // 🆕 New password
                 });
                 
-                console.log('✅ Session complète sauvegardée avec passwordChanged = true');
+                console.log('✅ Complete session saved with passwordChanged = true');
             }
 
-            console.log('✅ Mot de passe changé avec succès');
+            console.log('✅ Password changed successfully');
 
             return {
                 success: true,
-                message: data.message || 'Mot de passe changé avec succès',
+                message: data.message || 'Password changed successfully',
             };
 
         } catch (error) {
-            console.error('❌ Erreur changePassword:', error);
+            console.log('❌ Error in changePassword:', error);
             throw error;
         }
     },
 
     /**
-     * ✅ INITIALISATION: Au démarrage
+     * ✅ INITIALIZATION: At startup
      */
     async initializeAuth(): Promise<boolean> {
         try {
             const isAuth = await this.isAuthenticated();
 
             if (isAuth) {
-                console.log('✅ Session utilisateur restaurée');
+                console.log('✅ User session restored');
             } else {
-                console.log('⚠️ Aucune session active');
+                console.log('⚠️ No active session');
             }
 
             return isAuth;
 
         } catch (error) {
-            console.error('❌ Erreur initializeAuth:', error);
+            console.log('❌ Error in initializeAuth:', error);
             return false;
         }
     },
 
     /**
-     * 🆕 REFRESH TOKEN: Renouveler l'access token
+     * 🆕 REFRESH TOKEN: Renew access token
      */
     async refreshAccessToken(): Promise<boolean> {
         try {
             const sessionData = await getFromStorage(STORAGE_KEYS.SESSION);
 
             if (!sessionData || !sessionData.refreshToken) {
-                console.error('❌ Pas de refresh token disponible');
+                console.log('❌ No refresh token available');
                 return false;
             }
 
-            console.log('🔄 Refresh du token en cours...');
+            console.log('🔄 Token refresh in progress...');
 
             const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
                 method: 'POST',
@@ -511,39 +541,39 @@ export const authService = {
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                console.error('❌ Erreur refresh token:', errorData.message);
+                console.log('❌ Error refreshing token:', errorData.message);
                 
-                // 🆕 Si le refresh token est invalide (401/403), déconnecter et notifier
+                // 🆕 If refresh token is invalid (401/403), logout and notify
                 if (response.status === 401 || response.status === 403) {
-                    console.log('🚫 Refresh token expiré (401/403), déconnexion...');
+                    console.log('🚫 Refresh token expired (401/403), logging out...');
                     await this.logout();
-                    this.notifySessionExpired(); // 🆕 Notifier l'app
+                    this.notifySessionExpired(); // 🆕 Notify the app
                 }
                 return false;
             }
 
             const data: { accessToken: string } = await response.json();
 
-            // Mettre à jour la session avec le nouveau access token
+            // Update session with new access token
             const updatedSession: UserAuthSession = {
                 ...sessionData,
                 accessToken: data.accessToken,
-                tokenRefreshedAt: Date.now(), // 🆕 Mettre à jour la date de refresh
+                tokenRefreshedAt: Date.now(), // 🆕 Update refresh date
             };
 
             await saveToStorage(STORAGE_KEYS.SESSION, updatedSession);
 
-            console.log('✅ Token rafraîchi avec succès');
+            console.log('✅ Token refreshed successfully');
             return true;
 
         } catch (error) {
-            console.error('❌ Erreur refreshAccessToken:', error);
+            console.log('❌ Error in refreshAccessToken:', error);
             return false;
         }
     },
 
     /**
-     * 🆕 VÉRIFICATION: Token expiré ou proche de l'expiration
+     * 🆕 CHECK: Token expired or close to expiration
      */
     async isTokenExpired(): Promise<boolean> {
         try {
@@ -556,47 +586,47 @@ export const authService = {
             const currentTime = Date.now();
             const tokenAge = currentTime - sessionData.tokenRefreshedAt;
 
-            // Token expiré si plus de 55 minutes (pour laisser une marge)
+            // Token expired if more than 55 minutes (to leave a margin)
             return tokenAge > ACCESS_TOKEN_EXPIRATION;
 
         } catch (error) {
-            console.error('❌ Erreur isTokenExpired:', error);
+            console.log('❌ Error in isTokenExpired:', error);
             return true;
         }
     },
 
     /**
-     * 🆕 VALIDATION: Vérifier et rafraîchir le token si nécessaire
-     * À APPELER AVANT CHAQUE REQUÊTE API
+     * 🆕 VALIDATION: Check and refresh token if necessary
+     * CALL BEFORE EVERY API REQUEST
      */
     async ensureValidToken(): Promise<boolean> {
         try {
-            // Vérifier si l'utilisateur est authentifié
+            // Check if user is authenticated
             const isAuth = await this.isAuthenticated();
             if (!isAuth) {
-                console.log('⚠️ Utilisateur non authentifié');
+                console.log('⚠️ User not authenticated');
                 return false;
             }
 
-            // Vérifier si le token est expiré
+            // Check if token is expired
             const isExpired = await this.isTokenExpired();
 
             if (isExpired) {
-                console.log('⏰ Token expiré, refresh automatique...');
+                console.log('⏰ Token expired, automatic refresh...');
                 const refreshed = await this.refreshAccessToken();
                 
                 if (!refreshed) {
-                    console.error('❌ Impossible de rafraîchir le token');
+                    console.log('❌ Unable to refresh token');
                     return false;
                 }
             } else {
-                console.log('✅ Token valide, pas de refresh nécessaire');
+                console.log('✅ Token valid, no refresh needed');
             }
 
             return true;
 
         } catch (error) {
-            console.error('❌ Erreur ensureValidToken:', error);
+            console.log('❌ Error in ensureValidToken:', error);
             return false;
         }
     },

@@ -1,25 +1,25 @@
-// API Client avec refresh token automatique
+// API Client with automatic token refresh
 import { authService } from './authService';
 
 // API Configuration
 const API_BASE_URL = 'http://192.168.1.19:3000/api/v1';
 
 interface ApiRequestOptions extends RequestInit {
-    skipAuth?: boolean; // Pour les endpoints publics (login, register, etc.)
+    skipAuth?: boolean; // For public endpoints (login, register, etc.)
 }
 
 /**
- * 🚀 Client API avec gestion automatique du refresh token
+ * 🚀 API Client with automatic refresh token management
  * 
- * Utilisation:
+ * Usage:
  * ```typescript
  * const data = await apiClient.get('/users/me');
- * const result = await apiClient.post('/tasks', { title: 'Ma tâche' });
+ * const result = await apiClient.post('/tasks', { title: 'My task' });
  * ```
  */
 export const apiClient = {
     /**
-     * 🔐 Requête GET avec authentification
+     * 🔐 GET request with authentication
      */
     async get<T = any>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
         return this.request<T>(endpoint, {
@@ -29,7 +29,7 @@ export const apiClient = {
     },
 
     /**
-     * 🔐 Requête POST avec authentification
+     * 🔐 POST request with authentication
      */
     async post<T = any>(endpoint: string, body?: any, options: ApiRequestOptions = {}): Promise<T> {
         return this.request<T>(endpoint, {
@@ -40,7 +40,7 @@ export const apiClient = {
     },
 
     /**
-     * 🔐 Requête PUT avec authentification
+     * 🔐 PUT request with authentication
      */
     async put<T = any>(endpoint: string, body?: any, options: ApiRequestOptions = {}): Promise<T> {
         return this.request<T>(endpoint, {
@@ -51,7 +51,7 @@ export const apiClient = {
     },
 
     /**
-     * 🔐 Requête PATCH avec authentification
+     * 🔐 PATCH request with authentication
      */
     async patch<T = any>(endpoint: string, body?: any, options: ApiRequestOptions = {}): Promise<T> {
         return this.request<T>(endpoint, {
@@ -62,7 +62,7 @@ export const apiClient = {
     },
 
     /**
-     * 🔐 Requête DELETE avec authentification
+     * 🔐 DELETE request with authentication
      */
     async delete<T = any>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
         return this.request<T>(endpoint, {
@@ -72,36 +72,36 @@ export const apiClient = {
     },
 
     /**
-     * 🔧 Requête de base avec gestion automatique du refresh token
+     * 🔧 Base request with automatic refresh token management
      */
     async request<T = any>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
         const { skipAuth = false, ...fetchOptions } = options;
 
         try {
-            // 🔐 ÉTAPE 1: Vérifier et rafraîchir le token si nécessaire (sauf pour les endpoints publics)
+            // 🔐 STEP 1: Check and refresh token if necessary (except for public endpoints)
             if (!skipAuth) {
                 const isTokenValid = await authService.ensureValidToken();
                 
                 if (!isTokenValid) {
-                    throw new Error('Session invalide, veuillez vous reconnecter');
+                    throw new Error('Invalid session, please log in again');
                 }
             }
 
-            // 🔐 ÉTAPE 2: Récupérer le token
+            // 🔐 STEP 2: Retrieve token
             const accessToken = skipAuth ? null : await authService.getAccessToken();
 
-            // 🔧 ÉTAPE 3: Préparer les headers
-            const headers: HeadersInit = {
+            // 🔧 STEP 3: Prepare headers
+            const headers: any = {
                 'Content-Type': 'application/json',
                 ...fetchOptions.headers,
             };
 
-            // Ajouter le token d'authentification si disponible
+            // Add authentication token if available
             if (accessToken) {
                 headers['Authorization'] = `Bearer ${accessToken}`;
             }
 
-            // 🚀 ÉTAPE 4: Faire la requête
+            // 🚀 STEP 4: Make request
             const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
             
             console.log(`📡 ${fetchOptions.method || 'GET'} ${url}`);
@@ -111,40 +111,40 @@ export const apiClient = {
                 headers,
             });
 
-            // 🔍 ÉTAPE 5: Gérer la réponse
+            // 🔍 STEP 5: Handle response
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({
-                    message: `Erreur HTTP ${response.status}`,
+                    message: `HTTP Error ${response.status}`,
                 }));
 
-                // 🆕 Si 401 et que c'est pas un endpoint public, notifier l'expiration
+                // 🆕 If 401 and not a public endpoint, notify expiration
                 if (response.status === 401 && !skipAuth) {
-                    console.error('🚫 Token invalide (401), déconnexion...');
+                    console.log('🚫 Invalid token (401), logging out...');
                     await authService.logout();
-                    authService.notifySessionExpired(); // 🆕 Notifier l'app
-                    throw new Error('Session expirée, veuillez vous reconnecter');
+                    authService.notifySessionExpired(); // 🆕 Notify the app
+                    throw new Error('Session expired, please log in again');
                 }
 
-                throw new Error(errorData.message || `Erreur ${response.status}`);
+                throw new Error(errorData.message || `Error ${response.status}`);
             }
 
-            // Vérifier si la réponse a du contenu
+            // Check if response has content
             const contentType = response.headers.get('content-type');
             if (contentType && contentType.includes('application/json')) {
                 return await response.json();
             }
 
-            // Si pas de contenu JSON, retourner un objet vide
+            // If no JSON content, return empty object
             return {} as T;
 
         } catch (error) {
-            console.error(`❌ Erreur API ${endpoint}:`, error);
+            console.log(`❌ API Error ${endpoint}:`, error);
             throw error;
         }
     },
 
     /**
-     * 📤 Upload de fichier avec authentification
+     * 📤 File upload with authentication
      */
     async uploadFile<T = any>(
         endpoint: string,
@@ -153,19 +153,19 @@ export const apiClient = {
         additionalData?: Record<string, any>
     ): Promise<T> {
         try {
-            // Vérifier et rafraîchir le token
+            // Check and refresh token
             const isTokenValid = await authService.ensureValidToken();
             if (!isTokenValid) {
-                throw new Error('Session invalide, veuillez vous reconnecter');
+                throw new Error('Invalid session, please log in again');
             }
 
             const accessToken = await authService.getAccessToken();
 
-            // Créer FormData
+            // Create FormData
             const formData = new FormData();
             formData.append(fieldName, file);
 
-            // Ajouter les données supplémentaires
+            // Add additional data
             if (additionalData) {
                 Object.entries(additionalData).forEach(([key, value]) => {
                     formData.append(key, typeof value === 'string' ? value : JSON.stringify(value));
@@ -186,23 +186,23 @@ export const apiClient = {
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({
-                    message: `Erreur HTTP ${response.status}`,
+                    message: `HTTP Error ${response.status}`,
                 }));
 
                 if (response.status === 401) {
-                    console.error('🚫 Token invalide (401), déconnexion...');
+                    console.log('🚫 Invalid token (401), logging out...');
                     await authService.logout();
-                    authService.notifySessionExpired(); // 🆕 Notifier l'app
-                    throw new Error('Session expirée, veuillez vous reconnecter');
+                    authService.notifySessionExpired(); // 🆕 Notify the app
+                    throw new Error('Session expired, please log in again');
                 }
 
-                throw new Error(errorData.message || `Erreur ${response.status}`);
+                throw new Error(errorData.message || `Error ${response.status}`);
             }
 
             return await response.json();
 
         } catch (error) {
-            console.error(`❌ Erreur upload ${endpoint}:`, error);
+            console.log(`❌ Upload error ${endpoint}:`, error);
             throw error;
         }
     },

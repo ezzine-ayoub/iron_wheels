@@ -1,4 +1,4 @@
-// Composant réutilisable pour afficher les erreurs
+// Reusable component to display errors
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 
@@ -18,11 +18,11 @@ const ErrorMessage: React.FC<ErrorMessageProps> = ({
     const getBackgroundColor = () => {
         switch (type) {
             case 'error':
-                return 'rgba(220, 38, 38, 0.95)'; // Rouge
+                return 'rgba(220, 38, 38, 0.95)'; // Red
             case 'warning':
                 return 'rgba(245, 158, 11, 0.95)'; // Orange
             case 'info':
-                return 'rgba(59, 130, 246, 0.95)'; // Bleu
+                return 'rgba(59, 130, 246, 0.95)'; // Blue
             default:
                 return 'rgba(220, 38, 38, 0.95)';
         }

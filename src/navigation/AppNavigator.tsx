@@ -21,44 +21,44 @@ const AppNavigator = () => {
   useEffect(() => {
     checkAuthStatus();
     
-    // 🆕 Enregistrer le callback pour l'expiration de session
+    // 🆕 Register callback for session expiration
     authService.onSessionExpired(() => {
-      console.log('⏰ Session expirée détectée, redirection vers Login...');
+      console.log('⏰ Session expired detected, redirecting to Login...');
       setIsAuthenticated(false);
     });
   }, []);
 
   const checkAuthStatus = async () => {
     try {
-      console.log('🔍 Vérification de la session...');
+      console.log('🔍 Checking session...');
       
-      // Vérifier si l'utilisateur est déjà authentifié
+      // Check if user is already authenticated
       const isAuth = await authService.isAuthenticated();
       
       if (isAuth) {
-        // Vérifier si la session est toujours valide (pas expirée)
+        // Check if session is still valid (not expired)
         const isValid = await authService.isSessionValid();
         
         if (isValid) {
-          console.log('✅ Session valide trouvée, redirection vers Home');
+          console.log('✅ Valid session found, redirecting to Home');
           setIsAuthenticated(true);
         } else {
-          console.log('⚠️ Session expirée, redirection vers Login');
+          console.log('⚠️ Session expired, redirecting to Login');
           setIsAuthenticated(false);
         }
       } else {
-        console.log('ℹ️ Aucune session trouvée, redirection vers Login');
+        console.log('ℹ️ No session found, redirecting to Login');
         setIsAuthenticated(false);
       }
     } catch (error) {
-      console.error('❌ Erreur lors de la vérification de la session:', error);
+      console.log('❌ Error checking session:', error);
       setIsAuthenticated(false);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Afficher un splash screen pendant la vérification
+  // Show splash screen during verification
   if (isLoading) {
     return <SplashScreen />;
   }

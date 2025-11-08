@@ -20,6 +20,9 @@ interface ProfileScreenProps {
 
 const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout }) => {
   const [user, setUser] = useState({
+      name: '',
+      phone: '',
+      personal_No: '',
     email: '',
     id: '',
   });
@@ -39,8 +42,11 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout }) => {
       
       if (authData) {
         setUser({
-          email: authData.email || '',
-          id: authData.id || '',
+            name: authData.name || '',
+            personal_No: authData.personal_No || '',
+            phone:  authData.phone || '',
+            email: authData.email || '',
+          id: authData.id || ''
         });
         console.log('✅ Données utilisateur chargées depuis la session');
       } else {
@@ -87,10 +93,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout }) => {
     Alert.alert('Edit Profile', 'This feature will be available soon!');
   };
 
-  const handleChangePassword = () => {
-    Alert.alert('Change Password', 'This feature will be available soon!');
-  };
-
   // Helper pour vérifier si une valeur existe
   const hasValue = (value: string | undefined | null): boolean => {
     return value !== undefined && value !== null && value.trim() !== '';
@@ -101,6 +103,8 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout }) => {
     const fields = [
       { label: 'User ID', value: user.id },
       { label: 'Email', value: user.email },
+      { label: 'Phone', value: user.phone },
+      { label: 'Personal Number', value: user.personal_No },
     ];
     return fields.filter(field => hasValue(field.value));
   };
@@ -155,7 +159,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout }) => {
                   style={styles.avatar}
                 />
               </View>
-              {hasValue(user.email) && <Text style={styles.userName}>{user.email}</Text>}
+              {hasValue(user.name) && <Text style={styles.userName}>{user.name}</Text>}
               <View style={styles.statusBadge}>
                 <View style={styles.statusDot} />
                 <Text style={styles.statusText}>Active</Text>

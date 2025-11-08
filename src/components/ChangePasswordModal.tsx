@@ -1,4 +1,4 @@
-// Popup de changement de mot de passe obligatoire
+// Mandatory password change popup
 import React, {useState} from 'react';
 import {
     View,
@@ -23,7 +23,7 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
                                                                      visible,
                                                                      onPasswordChanged,
                                                                      oldPasswordChanged,
-                                                                        response,
+                                                                     response,
                                                                  }) => {
     const [oldPassword, setOldPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
@@ -36,26 +36,26 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         let isValid = true;
 
         if (!oldPassword) {
-            newErrors.old = 'Ancien mot de passe requis';
+            newErrors.old = 'Old password required';
             isValid = false;
         }
 
         // @ts-ignore
         if (oldPassword !== oldPasswordChanged) {
-            newErrors.old = 'old password not correct';
+            newErrors.old = 'Old password is incorrect';
             isValid = false;
         }
 
         if (!newPassword) {
-            newErrors.new = 'Nouveau mot de passe requis';
+            newErrors.new = 'New password required';
             isValid = false;
         } else if (newPassword.length < 8) {
-            newErrors.new = 'Minimum 8 caractères';
+            newErrors.new = 'Minimum 8 characters';
             isValid = false;
         }
 
         if (newPassword !== confirmPassword) {
-            newErrors.confirm = 'Les mots de passe ne correspondent pas';
+            newErrors.confirm = 'Passwords do not match';
             isValid = false;
         }
 
@@ -71,27 +71,29 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
         try {
             const {authService} = await import('../services/authService');
-            const result = await authService.changePassword({oldPassword, newPassword,response});
+            const result = await authService.changePassword({oldPassword, newPassword, response});
             console.log(result.success);
             if (result.success) {
-                // Réinitialiser les champs
+                // Reset fields
                 setOldPassword('');
                 setNewPassword('');
                 setConfirmPassword('');
                 setErrors({old: '', new: '', confirm: ''});
 
+                // Notify parent
+                onPasswordChanged();
             }
         } catch (error: any) {
-            // 🆕 Si c'est l'erreur de vérification locale, afficher sous le champ
-            if (error.message === 'Ancien mot de passe incorrect') {
+            // 🆕 If it's local verification error, display under field
+            if (error.message === 'Incorrect old password') {
                 setErrors({
-                    old: 'L\'ancien mot de passe ne correspond pas à celui utilisé pour se connecter',
+                    old: 'The old password does not match the one used to log in',
                     new: '',
                     confirm: ''
                 });
             } else {
-                // Autres erreurs, afficher en Alert
-                Alert.alert('❌ Erreur', error.message);
+                // Other errors, display in Alert
+                Alert.alert('❌ Error', error.message);
             }
         } finally {
             setLoading(false);
@@ -103,16 +105,16 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
             <View style={styles.overlay}>
                 <View style={styles.modal}>
                     <Text style={styles.icon}>🔐</Text>
-                    <Text style={styles.title}>Changement obligatoire</Text>
-                    <Text style={styles.subtitle}>Changez votre mot de passe pour continuer</Text>
+                    <Text style={styles.title}>Password Change Required</Text>
+                    <Text style={styles.subtitle}>Change your password to continue</Text>
 
                     <TextInput
                         style={[styles.input, errors.old && styles.inputError]}
-                        placeholder="Ancien mot de passe"
+                        placeholder="Old password"
                         value={oldPassword}
                         onChangeText={(text) => {
                             setOldPassword(text);
-                            // Réinitialiser l'erreur quand l'utilisateur retape
+                            // Reset error when user types again
                             if (errors.old) {
                                 setErrors({...errors, old: ''});
                             }
@@ -124,7 +126,7 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
                     <TextInput
                         style={[styles.input, errors.new && styles.inputError]}
-                        placeholder="Nouveau mot de passe"
+                        placeholder="New password"
                         value={newPassword}
                         onChangeText={setNewPassword}
                         secureTextEntry
@@ -134,7 +136,7 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
                     <TextInput
                         style={[styles.input, errors.confirm && styles.inputError]}
-                        placeholder="Confirmer le mot de passe"
+                        placeholder="Confirm password"
                         value={confirmPassword}
                         onChangeText={setConfirmPassword}
                         secureTextEntry
@@ -147,7 +149,7 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
                         onPress={handleChangePassword}
                         disabled={loading}
                     >
-                        {loading ? <ActivityIndicator color="#FFF"/> : <Text style={styles.buttonText}>Changer</Text>}
+                        {loading ? <ActivityIndicator color="#FFF"/> : <Text style={styles.buttonText}>Change</Text>}
                     </TouchableOpacity>
                 </View>
             </View>

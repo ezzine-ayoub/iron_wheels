@@ -12,4 +12,4 @@ export type {
 
 // Export constants
 export const SESSION_EXPIRATION_DAYS = 7;
-export const SESSION_EXPIRATION_TIME = 7 * 24 * 60 * 60 * 1000; // 7 jours en millisecondes
+export const SESSION_EXPIRATION_TIME = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
