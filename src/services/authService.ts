@@ -516,6 +516,34 @@ export const authService = {
     },
 
     /**
+     * 🆕 FORGOT PASSWORD
+     */
+    async forgotPassword(email: string): Promise<void> {
+        try {
+            console.log('🔑 Forgot password attempt...', email);
+
+            const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ email }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Failed to send reset link');
+            }
+
+            console.log('✅ Password reset link sent successfully');
+
+        } catch (error) {
+            console.log('❌ Error in forgotPassword:', error);
+            throw error;
+        }
+    },
+
+    /**
      * 🆕 REFRESH TOKEN: Renew access token
      */
     async refreshAccessToken(): Promise<boolean> {

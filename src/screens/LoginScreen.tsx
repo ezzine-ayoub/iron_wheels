@@ -17,6 +17,8 @@ import {colors} from './theme';
 import {authService} from '../services/authService';
 import ChangePasswordModal from '../components/ChangePasswordModal';
 
+import ForgotPasswordModal from '../components/ForgotPasswordModal';
+
 interface LoginScreenProps {
     onLoginSuccess: () => void;
 }
@@ -26,6 +28,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [showPasswordModal, setShowPasswordModal] = useState(false);
+    const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
     const [responseRequest, setResponseRequest] = useState({});
 
     const handleLogin = async () => {
@@ -70,11 +73,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
     };
 
     const handleForgotPassword = () => {
-        Alert.alert(
-            'Forgot Password',
-            'Please contact your administrator to reset your password.',
-            [{text: 'OK'}]
-        );
+        setShowForgotPasswordModal(true);
     };
 
     return (
@@ -164,6 +163,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
                     setShowPasswordModal(false);
                     onLoginSuccess();
                 }}
+            />
+
+            <ForgotPasswordModal
+                visible={showForgotPasswordModal}
+                onClose={() => setShowForgotPasswordModal(false)}
             />
         </>
     );
