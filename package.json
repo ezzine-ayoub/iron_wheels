@@ -1,5 +1,5 @@
 {
-  "name": "mobile_iron",
+  "name": "iron_wheels",
   "version": "0.0.1",
   "private": true,
   "scripts": {
@@ -13,12 +13,17 @@
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-community/netinfo": "^11.4.1",
+    "@react-native-firebase/app": "^23.5.0",
+    "@react-native-firebase/firestore": "^23.5.0",
+    "@react-native-firebase/messaging": "^23.5.0",
     "@react-native/new-app-screen": "0.82.1",
     "@react-navigation/native": "^7.1.19",
     "@react-navigation/stack": "^7.6.2",
     "axios": "^1.13.2",
     "expo-sqlite": "^16.0.9",
-    "patch-package": "^8.0.1",
+    "firebase-admin": "^13.6.0",
+    "jsonwebtoken": "^9.0.2",
     "postinstall-postinstall": "^2.1.0",
     "react": "19.1.1",
     "react-native": "0.82.1",
@@ -46,6 +51,7 @@
     "@types/react-test-renderer": "^19.1.0",
     "eslint": "^8.19.0",
     "jest": "^29.6.3",
+    "patch-package": "^8.0.1",
     "prettier": "2.8.8",
     "react-test-renderer": "19.1.1",
     "typescript": "^5.8.3"

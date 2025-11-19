@@ -5,7 +5,6 @@ import LoginScreen from '../screens/LoginScreen';
 import MainTabs from '../screens/MainTabs';
 import SplashScreen from '../components/SplashScreen';
 import { authService } from '../services/authService';
-import { colors } from '../screens/theme';
 
 export type RootStackParamList = {
   Login: undefined;

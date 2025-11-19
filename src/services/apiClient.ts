@@ -2,7 +2,7 @@
 import { authService } from './authService';
 
 // API Configuration
-const API_BASE_URL = 'http://192.168.1.19:3000/api/v1';
+export const API_BASE_URL = 'http://192.168.1.19:3000/api/v1';
 
 interface ApiRequestOptions extends RequestInit {
     skipAuth?: boolean; // For public endpoints (login, register, etc.)

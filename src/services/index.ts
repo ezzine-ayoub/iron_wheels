@@ -2,6 +2,8 @@
 export { authService } from './authService';
 export { authStorageService } from './authStorageService';
 export { apiClient } from './apiClient';
+export { offlineActionsService } from './offlineActionsService';
+export { jobStorageService } from './jobStorageService';
 
 // Export types
 export type {

@@ -24,7 +24,7 @@ interface LoginScreenProps {
 }
 
 const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
-    const [email, setEmail] = useState('');
+    const [driverNo, setDriverNo] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -32,10 +32,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
     const [responseRequest, setResponseRequest] = useState({});
 
     const handleLogin = async () => {
-        if (!email || !password) {
+        if (!driverNo || !password) {
             Alert.alert(
                 'Missing Information',
-                'Please enter your email and password',
+                'Please enter your driver number and password',
                 [{text: 'OK'}]
             );
             return;
@@ -44,7 +44,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
         setLoading(true);
 
         try {
-            const result = await authService.login({email, password});
+            const result = await authService.login({driverNo, password});
             setResponseRequest(result);
             
             // Check if user must change password
@@ -101,15 +101,15 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
                         <Text style={styles.title}>Login</Text>
 
                         <View style={styles.inputContainer}>
-                            <Text style={styles.label}>Email</Text>
+                            <Text style={styles.label}>Driver Number</Text>
                             <TextInput
                                 style={styles.input}
-                                placeholder="Enter your email"
-                                value={email}
-                                onChangeText={setEmail}
+                                placeholder="Enter driver number"
+                                value={driverNo}
+                                onChangeText={setDriverNo}
                                 autoCapitalize="none"
                                 autoCorrect={false}
-                                keyboardType="email-address"
+                                keyboardType="default"
                                 editable={!loading}
                                 placeholderTextColor={colors.textSecondary}
                             />

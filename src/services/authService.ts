@@ -1,8 +1,6 @@
 // AuthService - API REST Authentication
 import authStorageService from './authStorageService';
-
-// API Configuration
-const API_BASE_URL = 'http://192.168.1.19:3000/api/v1';
+import {API_BASE_URL} from "./apiClient.ts";
 
 // Session expiration: 7 days in milliseconds
 const SESSION_EXPIRATION_TIME = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -14,13 +12,20 @@ const ACCESS_TOKEN_EXPIRATION = 55 * 60 * 1000; // 55 minutes
 interface ApiLoginResponse {
     accessToken: string;
     refreshToken: string;
-    email: string;
-    name: string;
-    phone: string;
-    personal_No: string;
-    id: string;
-    passwordChanged: boolean;
     profileCompleted: boolean;
+    user: {
+        id: string;
+        email: string;
+        name: string;
+        passwordChanged: boolean;
+        role: string;
+        driverNo: string;
+        phone: string;
+        personalNo: string;
+        employed: boolean;
+        createdAt: string;
+        updatedAt: string;
+    };
 }
 
 // Interface for stored session
@@ -31,7 +36,9 @@ interface UserAuthSession {
     email: string;
     name: string;
     phone: string;
-    personal_No: string;
+    personalNo: string;
+    driverNo: string;
+    employed: boolean;
     passwordChanged: boolean;
     profileCompleted: boolean;
     timestamp: number;
@@ -43,7 +50,9 @@ export interface AuthUser {
     email: string;
     name: string;
     phone: string;
-    personal_No: string;
+    personalNo: string;
+    employed: boolean;
+    driverNo: string;
     passwordChanged: boolean;
     profileCompleted: boolean;
 }
@@ -55,13 +64,15 @@ export interface AuthResponse {
     email: string;
     name: string;
     phone: string;
-    personal_No: string;
+    personalNo: string;
+    employed: boolean;
+    driverNo: string;
     passwordChanged: boolean;
     profileCompleted: boolean;
 }
 
 export interface LoginCredentials {
-    email: string;
+    driverNo: string;
     password: string;
 }
 
@@ -134,8 +145,9 @@ export const authService = {
      */
     async login(credentials: LoginCredentials): Promise<AuthResponse> {
         try {
-            console.log('🔐 Login attempt...', credentials.email);
-
+            console.log('🔐 Login attempt...', credentials.driverNo);
+            console.log(`${API_BASE_URL}/auth/login`)
+            console.log(credentials)
             const response = await fetch(`${API_BASE_URL}/auth/login`, {
                 method: 'POST',
                 headers: {
@@ -148,7 +160,7 @@ export const authService = {
                 
                 // Specific handling of login errors
                 if (response.status === 401) {
-                    throw new Error('Incorrect email or password');
+                    throw new Error('Incorrect driver number or password');
                 }
                 
                 if (response.status === 400) {
@@ -164,27 +176,30 @@ export const authService = {
             }
 
             const data: ApiLoginResponse = await response.json();
+            console.log("Login response data: ", data);
 
             // 🆕 If passwordChanged === false, DO NOT save the session
-            if (!data.passwordChanged) {
+            if (!data.user.passwordChanged) {
                 console.log('⚠️ passwordChanged = false, session NOT saved');
                 
                 // Save ONLY temporary credentials for password change
                 await saveToStorage(STORAGE_KEYS.CREDENTIALS, {
-                    email: credentials.email,
+                    driverNo: credentials.driverNo,
                     password: credentials.password,
                 });
                 
                 // Return data without saving session
                 return {
-                    id: data.id,
+                    id: data.user.id,
                     accessToken: data.accessToken,
                     refreshToken: data.refreshToken,
-                    email: data.email,
-                    name: data.name,
-                    phone: data.phone,
-                    personal_No: data.personal_No,
-                    passwordChanged: data.passwordChanged,
+                    email: data.user.email,
+                    name: data.user.name,
+                    phone: data.user.phone,
+                    personalNo: data.user.personalNo,
+                    employed: data.user.employed,
+                    driverNo: data.user.driverNo,
+                    passwordChanged: data.user.passwordChanged,
                     profileCompleted: data.profileCompleted,
                 };
             }
@@ -194,14 +209,16 @@ export const authService = {
             
             // Create session
             const sessionData: UserAuthSession = {
-                id: data.id,
+                id: data.user.id,
                 accessToken: data.accessToken,
                 refreshToken: data.refreshToken,
-                email: data.email,
-                name: data.name,
-                phone: data.phone,
-                personal_No: data.personal_No,
-                passwordChanged: data.passwordChanged,
+                email: data.user.email,
+                name: data.user.name,
+                phone: data.user.phone,
+                personalNo: data.user.personalNo,
+                driverNo: data.user.driverNo,
+                employed: data.user.employed,
+                passwordChanged: data.user.passwordChanged,
                 profileCompleted: data.profileCompleted,
                 timestamp: Date.now(),
                 tokenRefreshedAt: Date.now(), // 🆕 Initialize refresh date
@@ -210,21 +227,23 @@ export const authService = {
             // Save to storage
             await saveToStorage(STORAGE_KEYS.SESSION, sessionData);
             await saveToStorage(STORAGE_KEYS.CREDENTIALS, {
-                email: credentials.email,
+                driverNo: credentials.driverNo,
                 password: credentials.password,
             });
 
             console.log('✅ Login successful');
 
             return {
-                id: data.id,
+                id: data.user.id,
                 accessToken: data.accessToken,
                 refreshToken: data.refreshToken,
-                email: data.email,
-                name: data.name,
-                phone: data.phone,
-                personal_No: data.personal_No,
-                passwordChanged: data.passwordChanged,
+                email: data.user.email,
+                name: data.user.name,
+                phone: data.user.phone,
+                personalNo: data.user.personalNo,
+                employed: data.user.employed,
+                driverNo: data.user.driverNo,
+                passwordChanged: data.user.passwordChanged,
                 profileCompleted: data.profileCompleted,
             };
 
@@ -268,22 +287,31 @@ export const authService = {
     async getStoredAuthData(): Promise<AuthResponse | null> {
         try {
             const sessionData = await getFromStorage(STORAGE_KEYS.SESSION);
-            console.log(sessionData)
+            
+            console.log('🔍 getStoredAuthData - sessionData:', sessionData);
+            
             if (!sessionData) {
+                console.log('⚠️ No sessionData found in storage');
                 return null;
             }
 
-            return {
+            const authResponse = {
                 id: sessionData.id,
                 accessToken: sessionData.accessToken,
                 refreshToken: sessionData.refreshToken,
                 email: sessionData.email,
                 name: sessionData.name,
                 phone: sessionData.phone,
-                personal_No: sessionData.personal_No,
+                personalNo: sessionData.personalNo,
+                employed: sessionData.employed,
+                driverNo: sessionData.driverNo,
                 passwordChanged: sessionData.passwordChanged,
                 profileCompleted: sessionData.profileCompleted,
             };
+            
+            console.log('✅ Returning authResponse with ID:', authResponse.id);
+            
+            return authResponse;
 
         } catch (error) {
             console.log('❌ Error in getStoredAuthData:', error);
@@ -307,7 +335,9 @@ export const authService = {
                 email: authData.email,
                 name: authData.name,
                 phone: authData.phone,
-                personal_No: authData.personal_No,
+                personalNo: authData.personalNo,
+                employed: authData.employed,
+                driverNo: authData.driverNo,
                 passwordChanged: authData.passwordChanged,
                 profileCompleted: authData.profileCompleted,
             };
@@ -327,42 +357,6 @@ export const authService = {
         } catch (error) {
             console.log('❌ Error in getAccessToken:', error);
             return null;
-        }
-    },
-
-    /**
-     * ✅ SESSION: Time remaining before expiration
-     */
-    async getSessionTimeRemaining(): Promise<number> {
-        try {
-            const sessionData = await getFromStorage(STORAGE_KEYS.SESSION);
-            
-            if (!sessionData || !sessionData.timestamp) {
-                return 0;
-            }
-
-            const currentTime = Date.now();
-            const sessionAge = currentTime - sessionData.timestamp;
-            const timeRemaining = SESSION_EXPIRATION_TIME - sessionAge;
-            
-            return Math.max(0, timeRemaining);
-        } catch (error) {
-            console.log('❌ Error in getSessionTimeRemaining:', error);
-            return 0;
-        }
-    },
-
-    /**
-     * ✅ SESSION: Days remaining before expiration
-     */
-    async getDaysUntilExpiration(): Promise<number> {
-        try {
-            const timeRemaining = await this.getSessionTimeRemaining();
-            const daysRemaining = Math.floor(timeRemaining / (24 * 60 * 60 * 1000));
-            return daysRemaining;
-        } catch (error) {
-            console.log('❌ Error in getDaysUntilExpiration:', error);
-            return 0;
         }
     },
 
@@ -463,7 +457,8 @@ export const authService = {
                     email: payload.response.email,
                     name: payload.response.name,
                     phone: payload.response.phone,
-                    personal_No: payload.response.personal_No,
+                    personalNo: payload.response.personalNo,
+                    employed: payload.response.employed,
                     passwordChanged: true, // 🆕 Mark as changed
                     profileCompleted: payload.response.profileCompleted,
                     timestamp: Date.now(),
@@ -473,10 +468,14 @@ export const authService = {
                 await saveToStorage(STORAGE_KEYS.SESSION, sessionData);
                 
                 // Also update credentials with new password
-                await saveToStorage(STORAGE_KEYS.CREDENTIALS, {
-                    email: payload.response.email,
-                    password: payload.newPassword, // 🆕 New password
-                });
+                // Note: We don't have driverNo in the response, so we keep existing credentials
+                const existingCreds = await getFromStorage(STORAGE_KEYS.CREDENTIALS);
+                if (existingCreds) {
+                    await saveToStorage(STORAGE_KEYS.CREDENTIALS, {
+                        ...existingCreds,
+                        password: payload.newPassword, // 🆕 New password
+                    });
+                }
                 
                 console.log('✅ Complete session saved with passwordChanged = true');
             }
@@ -518,16 +517,16 @@ export const authService = {
     /**
      * 🆕 FORGOT PASSWORD
      */
-    async forgotPassword(email: string): Promise<void> {
+    async forgotPassword(driverNo: string): Promise<void> {
         try {
-            console.log('🔑 Forgot password attempt...', email);
+            console.log('🔑 Forgot password attempt...', driverNo);
 
             const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ email }),
+                body: JSON.stringify({ driverNo }),
             });
 
             if (!response.ok) {

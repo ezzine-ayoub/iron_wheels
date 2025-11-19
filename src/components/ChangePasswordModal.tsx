@@ -63,6 +63,14 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         return isValid;
     };
 
+    const handleCancel = () => {
+        // Clean all fields
+        setOldPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setErrors({old: '', new: '', confirm: ''});
+    };
+
     const handleChangePassword = async () => {
 
         if (!validateForm()) return;
@@ -144,13 +152,23 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
                     />
                     {errors.confirm ? <Text style={styles.error}>{errors.confirm}</Text> : null}
 
-                    <TouchableOpacity
-                        style={[styles.button, loading && styles.buttonDisabled]}
-                        onPress={handleChangePassword}
-                        disabled={loading}
-                    >
-                        {loading ? <ActivityIndicator color="#FFF"/> : <Text style={styles.buttonText}>Change</Text>}
-                    </TouchableOpacity>
+                    <View style={styles.buttonContainer}>
+                        <TouchableOpacity
+                            style={[styles.button, styles.cancelButton, loading && styles.buttonDisabled]}
+                            onPress={handleCancel}
+                            disabled={loading}
+                        >
+                            <Text style={styles.cancelButtonText}>Cancel</Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity
+                            style={[styles.button, styles.changeButton, loading && styles.buttonDisabled]}
+                            onPress={handleChangePassword}
+                            disabled={loading}
+                        >
+                            {loading ? <ActivityIndicator color="#FFF"/> : <Text style={styles.changeButtonText}>Change</Text>}
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </View>
         </Modal>
@@ -166,9 +184,13 @@ const styles = StyleSheet.create({
     input: {backgroundColor: '#F5F5F5', borderRadius: 10, padding: 12, marginBottom: 12, fontSize: 16},
     inputError: {borderColor: 'red', borderWidth: 1},
     error: {color: 'red', fontSize: 12, marginTop: -8, marginBottom: 8},
-    button: {backgroundColor: colors.primary, borderRadius: 10, padding: 14, alignItems: 'center', marginTop: 8},
+    buttonContainer: {flexDirection: 'row', gap: 12, marginTop: 8},
+    button: {flex: 1, borderRadius: 10, padding: 14, alignItems: 'center'},
+    cancelButton: {backgroundColor: '#6B7280'},
+    changeButton: {backgroundColor: colors.primary},
     buttonDisabled: {opacity: 0.6},
-    buttonText: {color: '#FFF', fontSize: 16, fontWeight: '600'},
+    cancelButtonText: {color: '#FFF', fontSize: 16, fontWeight: '600'},
+    changeButtonText: {color: '#FFF', fontSize: 16, fontWeight: '600'},
 });
 
 export default ChangePasswordModal;

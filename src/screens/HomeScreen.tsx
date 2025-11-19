@@ -11,11 +11,20 @@ import {
     Image,
     ActivityIndicator,
     Alert,
+    RefreshControl,
 } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import {Job} from '../types';
 import {colors} from './theme';
 import {apiClient} from '../services/apiClient';
 import {authService} from '../services/authService';
+import ConfirmationModal from '../components/ConfirmationModal';
+import NetworkIndicator from '../components/NetworkIndicator';
+import OfflineWarningModal from '../components/OfflineWarningModal';
+import SyncBar from '../components/SyncBar';
+import {offlineActionsService} from '../services/offlineActionsService';
+import {jobStorageService} from '../services/jobStorageService';
+import { useAutoSync } from '../hooks/useAutoSync';
 
 interface HomeScreenProps {
     onLogout?: () => void;
@@ -24,17 +33,78 @@ interface HomeScreenProps {
 const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
     const [job, setJob] = useState<Job | null>(null);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
     const [showModal, setShowModal] = useState(false);
     const [currentStep, setCurrentStep] = useState<'receive' | 'start' | 'sleep' | 'finish' | null>(null);
     const [message, setMessage] = useState(false);
-    useEffect(() => {
-        fetchJob();
-    }, []);
+    const [confirmationModalVisible, setConfirmationModalVisible] = useState(false);
+    const [confirmationConfig, setConfirmationConfig] = useState({
+        title: '',
+        message: '',
+        onConfirm: () => {},
+        confirmText: 'Confirm',
+    });
+    const [isConnected, setIsConnected] = useState<boolean>(true);
+    const [offlineWarningVisible, setOfflineWarningVisible] = useState(false);
+    const [pendingActionType, setPendingActionType] = useState<'receive' | 'start' | 'sleep' | 'finish' | null>(null);
+    const [pendingCountryChoice, setPendingCountryChoice] = useState<string | null>(null);
+    const [pendingActionsCount, setPendingActionsCount] = useState(0);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [isAutoSyncing, setIsAutoSyncing] = useState(false);
 
-    const fetchJob = async () => {
+    useEffect(() => {
+        const initialize = async () => {
+            await initializeOfflineService();
+            await fetchJob();
+            await checkPendingActions();
+        };
+        
+        initialize();
+        
+        // Listen to network changes
+        const unsubscribe = NetInfo.addEventListener(state => {
+            const connected = state.isConnected ?? false;
+            const wasConnected = isConnected;
+            
+            setIsConnected(connected);
+            
+            // Auto-sync when connection is restored
+            if (connected && !wasConnected) {
+                console.log('🌐 Internet connection restored, auto-syncing...');
+                handleAutoSync();
+            }
+            
+            if (connected) {
+                checkPendingActions();
+            }
+        });
+
+        return () => unsubscribe();
+    }, [isConnected]); // Add isConnected as dependency
+
+    const initializeOfflineService = async () => {
+        await offlineActionsService.init();
+        await jobStorageService.init();
+    };
+
+    const checkPendingActions = async () => {
+        const count = await offlineActionsService.getPendingActionsCount();
+        setPendingActionsCount(count);
+    };
+
+    const openConfirmationModal = (title: string, message: string, onConfirm: () => void, confirmText: string) => {
+        setConfirmationConfig({ title, message, onConfirm, confirmText });
+        setConfirmationModalVisible(true);
+    };
+
+    const fetchJob = async (isRefreshing: boolean = false) => {
         try {
-            setLoading(true);
+            if (isRefreshing) {
+                setRefreshing(true);
+            } else {
+                setLoading(true);
+            }
 
             const user = await authService.getCurrentUser();
 
@@ -47,20 +117,48 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
 
             console.log('🔍 Fetching job for driver:', user.id);
 
-            const response = await apiClient.get<Job>(`/jobs/${user.id}`);
+            // Try to get from API first
+            try {
+                const response = await apiClient.get<Job>(`/users/me/job`);
 
-            if (response) {
-                console.log('✅ Job fetched:', response);
-                setJob(response);
+                if (response) {
+                    console.log('✅ Job fetched from API:', response);
+                    setJob(response);
+                    
+                    // Save to local storage
+                    await jobStorageService.saveJob(response);
 
-                // Determine current step based on API fields
-                const step = determineCurrentStep(response);
-                setCurrentStep(step);
-                console.log('📍 Current step:', step);
-            } else {
-                console.log('ℹ️ No job available');
-                setJob(null);
-                setCurrentStep(null);
+                    // Determine current step based on API fields
+                    const step = determineCurrentStep(response);
+                    setCurrentStep(step);
+                    console.log('📍 Current step:', step);
+                } else {
+                    console.log('ℹ️ No job available from API');
+                    // Try to get from local storage
+                    const localJob = await jobStorageService.getJob();
+                    if (localJob && !localJob.isFinished) {
+                        console.log('💾 Using local job:', localJob);
+                        setJob(localJob);
+                        const step = determineCurrentStep(localJob);
+                        setCurrentStep(step);
+                    } else {
+                        setJob(null);
+                        setCurrentStep(null);
+                    }
+                }
+            } catch (apiError: any) {
+                console.log('❌ API Error, trying local storage:', apiError.message);
+                
+                // If API fails, try local storage
+                const localJob = await jobStorageService.getJob();
+                if (localJob && !localJob.isFinished) {
+                    console.log('💾 Using local job (API failed):', localJob);
+                    setJob(localJob);
+                    const step = determineCurrentStep(localJob);
+                    setCurrentStep(step);
+                } else {
+                    throw apiError; // Re-throw to handle in outer catch
+                }
             }
         } catch (error: any) {
             console.log('❌ Error fetching job:', error);
@@ -69,12 +167,34 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
                 console.log('ℹ️ No job available for driver');
                 setJob(null);
                 setCurrentStep(null);
+            } else if (!isConnected) {
+                // If offline, try to load from local storage
+                const localJob = await jobStorageService.getJob();
+                if (localJob && !localJob.isFinished) {
+                    console.log('💾 Using cached job (offline):', localJob);
+                    setJob(localJob);
+                    const step = determineCurrentStep(localJob);
+                    setCurrentStep(step);
+                } else {
+                    Alert.alert('Offline', 'No cached job available. Please connect to the internet.');
+                    setJob(null);
+                    setCurrentStep(null);
+                }
             } else {
                 Alert.alert('Error', 'Failed to load job. Please try again.');
             }
         } finally {
-            setLoading(false);
+            if (isRefreshing) {
+                setRefreshing(false);
+            } else {
+                setLoading(false);
+            }
         }
+    };
+
+    const onRefresh = async () => {
+        console.log('🔄 Pull to refresh triggered');
+        await fetchJob(true);
     };
 
     // Determine current step based on existing API fields
@@ -104,20 +224,59 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
 
     const handleReceive = async () => {
         if (!job) return;
+        
+        // Check if offline
+        if (!isConnected) {
+            setPendingActionType('receive');
+            setOfflineWarningVisible(true);
+            return;
+        }
+        
+        openConfirmationModal(
+            'Confirme',
+            'Are you sure you want to receive this job?',
+            async () => {
+                setConfirmationModalVisible(false);
+                await performReceiveAction();
+            },
+            'Confirm'
+        );
+    };
 
+    const performReceiveAction = async () => {
+        if (!job) return;
         try {
             setActionLoading(true);
             console.log('📥 Receiving job:', job.id);
-
+            
+            if (!isConnected) {
+                // Update job locally
+                const updatedJob = await jobStorageService.updateReceiveStatus(job.id);
+                if (updatedJob) {
+                    setJob(updatedJob);
+                    const step = determineCurrentStep(updatedJob);
+                    setCurrentStep(step);
+                }
+                
+                // Save to offline queue
+                await offlineActionsService.addPendingAction({
+                    jobId: job.id,
+                    actionType: 'receive',
+                    timestamp: new Date().toISOString(),
+                });
+                Alert.alert('Saved Offline', 'Job received locally. Will sync when online.');
+                await checkPendingActions();
+                return;
+            }
+            
             const updatedJob = await apiClient.post<Job>(`/jobs/${job.id}/receive`);
-
             console.log('✅ Job received successfully');
             console.log('🔄 Updated job:', updatedJob);
-
-            // Update job with response
             setJob(updatedJob);
-
-            // Determine new step
+            
+            // Save to local storage
+            await jobStorageService.saveJob(updatedJob);
+            
             const step = determineCurrentStep(updatedJob);
             setCurrentStep(step);
             console.log('📍 New step:', step);
@@ -131,20 +290,58 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
 
     const handleStart = async () => {
         if (!job) return;
+        
+        // Check if offline
+        if (!isConnected) {
+            setPendingActionType('start');
+            setOfflineWarningVisible(true);
+            return;
+        }
+        
+        openConfirmationModal(
+            'Confirme',
+            'Are you sure you want to start this job?',
+            async () => {
+                setConfirmationModalVisible(false);
+                await performStartAction();
+            },
+            'Confime'
+        );
+    };
 
+    const performStartAction = async () => {
+        if (!job) return;
         try {
             setActionLoading(true);
             console.log('▶️ Starting job:', job.id);
-
+            
+            if (!isConnected) {
+                // Update job locally
+                const updatedJob = await jobStorageService.updateStartStatus(job.id);
+                if (updatedJob) {
+                    setJob(updatedJob);
+                    const step = determineCurrentStep(updatedJob);
+                    setCurrentStep(step);
+                }
+                
+                await offlineActionsService.addPendingAction({
+                    jobId: job.id,
+                    actionType: 'start',
+                    timestamp: new Date().toISOString(),
+                });
+                Alert.alert('Saved Offline', 'Job started locally. Will sync when online.');
+                await checkPendingActions();
+                return;
+            }
+            
             const updatedJob = await apiClient.post<Job>(`/jobs/${job.id}/start`);
-
             console.log('✅ Job started successfully');
             console.log('🔄 Updated job:', updatedJob);
-
-            // Update job with response
             setJob(updatedJob);
-
-            // Determine new step
+            
+            // Save to local storage
+            await jobStorageService.saveJob(updatedJob);
+            
             const step = determineCurrentStep(updatedJob);
             setCurrentStep(step);
             console.log('📍 New step:', step);
@@ -157,11 +354,35 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
     };
 
     const handleSleep = () => {
-        setShowModal(true);
+        // Check if offline
+        if (!isConnected) {
+            setPendingActionType('sleep');
+            setOfflineWarningVisible(true);
+            return;
+        }
+        
+        openConfirmationModal(
+            'Confirme',
+            'Are you sure you want to sleep?',
+            () => {
+                setConfirmationModalVisible(false);
+                setShowModal(true);
+            },
+            'Confirme'
+        );
     };
 
     const handleCountryChoice = async (country: string) => {
         if (!job) return;
+
+        // Check if offline
+        if (!isConnected) {
+            setPendingCountryChoice(country);
+            setPendingActionType('sleep');
+            setShowModal(false);
+            setOfflineWarningVisible(true);
+            return;
+        }
 
         try {
             setActionLoading(true);
@@ -181,7 +402,52 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
             console.log('📍 New step:', step);
         } catch (error: any) {
             console.log('❌ Error logging sleep:', error);
-            Alert.alert('Error', 'Failed to log sleep. Please try again.');
+            Alert.alert('Error', 'Failed to sleep. Please try again.');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const performSleepAction = async (country: string) => {
+        if (!job) return;
+        try {
+            setActionLoading(true);
+            console.log('😴 Logging sleep in:', country);
+            
+            if (!isConnected) {
+                // Update job locally
+                const updatedJob = await jobStorageService.updateSleepStatus(job.id, country);
+                if (updatedJob) {
+                    setJob(updatedJob);
+                    const step = determineCurrentStep(updatedJob);
+                    setCurrentStep(step);
+                }
+                
+                await offlineActionsService.addPendingAction({
+                    jobId: job.id,
+                    actionType: 'sleep',
+                    actionData: JSON.stringify({ country: country.toLowerCase() }),
+                    timestamp: new Date().toISOString(),
+                });
+                Alert.alert('Saved Offline', 'Sleep logged locally. Will sync when online.');
+                await checkPendingActions();
+                return;
+            }
+            
+            const updatedJob = await apiClient.post<Job>(`/jobs/${job.id}/sleep`, {
+                country: country.toLowerCase(),
+            });
+            setJob(updatedJob);
+            
+            // Save to local storage
+            await jobStorageService.saveJob(updatedJob);
+            
+            const step = determineCurrentStep(updatedJob);
+            setCurrentStep(step);
+            console.log('📍 New step:', step);
+        } catch (error: any) {
+            console.log('❌ Error logging sleep:', error);
+            Alert.alert('Error', 'Failed to sleep. Please try again.');
         } finally {
             setActionLoading(false);
         }
@@ -189,18 +455,64 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
 
     const handleFinish = async () => {
         if (!job) return;
+        
+        // Check if offline
+        if (!isConnected) {
+            setPendingActionType('finish');
+            setOfflineWarningVisible(true);
+            return;
+        }
+        
+        openConfirmationModal(
+            'Complete Job',
+            'Are you sure you want to complete this job?',
+            async () => {
+                setConfirmationModalVisible(false);
+                await performFinishAction();
+            },
+            'Complete'
+        );
+    };
 
+    const performFinishAction = async () => {
+        if (!job) return;
         try {
             setActionLoading(true);
             console.log('✅ Finishing job:', job.id);
-
-            // Immediately hide the card before API call
+            
+            if (!isConnected) {
+                // Update job locally
+                const updatedJob = await jobStorageService.updateFinishStatus(job.id);
+                if (updatedJob) {
+                    setJob(updatedJob);
+                    const step = determineCurrentStep(updatedJob);
+                    setCurrentStep(step);
+                }
+                
+                await offlineActionsService.addPendingAction({
+                    jobId: job.id,
+                    actionType: 'finish',
+                    timestamp: new Date().toISOString(),
+                });
+                Alert.alert('Saved Offline', 'Job finished locally. Will sync when online.');
+                await checkPendingActions();
+                
+                // Show success message
+                setMessage(true);
+                setTimeout(() => {
+                    setMessage(false);
+                }, 3000);
+                return;
+            }
+            
             setJob(null);
             setCurrentStep(null);
-
             const response = await apiClient.post<Job>(`/jobs/${job.id}/finish`);
             console.log('🔄 Finished job response:', response);
-            // Wait 3 seconds then check for new jobs
+            
+            // Delete local job
+            await jobStorageService.deleteJobById(job.id);
+            
             setMessage(true)
             setTimeout(() => {
                 setMessage(false);
@@ -209,12 +521,195 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
         } catch (error: any) {
             console.log('❌ Error finishing job:', error);
             Alert.alert('Error', 'Failed to finish job. Please try again.');
-            // Refresh to restore the job if finish failed
             await fetchJob();
         } finally {
             setActionLoading(false);
         }
     };
+
+    // Handle offline warning modal
+    const handleOfflineWarningContinue = async () => {
+        setOfflineWarningVisible(false);
+        
+        if (!pendingActionType) return;
+        
+        switch (pendingActionType) {
+            case 'receive':
+                await performReceiveAction();
+                break;
+            case 'start':
+                await performStartAction();
+                break;
+            case 'sleep':
+                if (pendingCountryChoice) {
+                    await performSleepAction(pendingCountryChoice);
+                    setPendingCountryChoice(null);
+                } else {
+                    setShowModal(true);
+                }
+                break;
+            case 'finish':
+                await performFinishAction();
+                break;
+        }
+        
+        setPendingActionType(null);
+    };
+
+    const handleOfflineWarningCancel = () => {
+        setOfflineWarningVisible(false);
+        setPendingActionType(null);
+        setPendingCountryChoice(null);
+    };
+
+    // Auto-sync when internet comes back
+    const handleAutoSync = async () => {
+        const count = await offlineActionsService.getPendingActionsCount();
+        
+        if (count === 0) {
+            console.log('✅ No pending actions to sync');
+            return;
+        }
+        
+        console.log(`🔄 Auto-syncing ${count} pending action(s)...`);
+        setIsAutoSyncing(true);
+        
+        try {
+            const pendingActions = await offlineActionsService.getPendingActions();
+            
+            let successCount = 0;
+            let failCount = 0;
+            
+            for (const action of pendingActions) {
+                try {
+                    console.log(`📤 Syncing ${action.actionType} for job ${action.jobId}`);
+                    
+                    switch (action.actionType) {
+                        case 'receive':
+                            await apiClient.post<Job>(`/jobs/${action.jobId}/receive`);
+                            break;
+                        case 'start':
+                            await apiClient.post<Job>(`/jobs/${action.jobId}/start`);
+                            break;
+                        case 'sleep':
+                            const sleepData = action.actionData ? JSON.parse(action.actionData) : {};
+                            await apiClient.post<Job>(`/jobs/${action.jobId}/sleep`, sleepData);
+                            break;
+                        case 'finish':
+                            await apiClient.post<Job>(`/jobs/${action.jobId}/finish`);
+                            break;
+                    }
+                    
+                    await offlineActionsService.markAsSynced(action.id!);
+                    successCount++;
+                    console.log(`✅ Auto-synced ${action.actionType} successfully`);
+                } catch (error: any) {
+                    console.log(`❌ Failed to auto-sync ${action.actionType}:`, error);
+                    failCount++;
+                }
+            }
+            
+            // Clean up synced actions
+            await offlineActionsService.clearSyncedActions();
+            await checkPendingActions();
+            
+            // Refresh job after sync
+            await fetchJob();
+            
+            // Show notification to user
+            if (failCount === 0 && successCount > 0) {
+                Alert.alert(
+                    '✅ Synced Successfully',
+                    `${successCount} pending action(s) have been synced automatically.`,
+                    [{ text: 'OK' }]
+                );
+            } else if (successCount > 0 && failCount > 0) {
+                Alert.alert(
+                    '⚠️ Partial Sync',
+                    `Synced ${successCount} action(s), but ${failCount} failed. You can retry manually.`,
+                    [{ text: 'OK' }]
+                );
+            } else if (failCount > 0) {
+                console.log('❌ All auto-sync attempts failed, user can retry manually');
+            }
+        } catch (error: any) {
+            console.log('❌ Error during auto-sync:', error);
+        } finally {
+            setIsAutoSyncing(false);
+        }
+    };
+
+    // Sync pending actions
+    const handleSyncActions = async () => {
+        if (!isConnected) {
+            Alert.alert('No Internet', 'Please connect to the internet to sync your actions.');
+            return;
+        }
+        
+        setIsSyncing(true);
+        
+        try {
+            const pendingActions = await offlineActionsService.getPendingActions();
+            
+            if (pendingActions.length === 0) {
+                Alert.alert('No Actions', 'There are no pending actions to sync.');
+                return;
+            }
+            
+            console.log(`🔄 Syncing ${pendingActions.length} pending actions...`);
+            
+            let successCount = 0;
+            let failCount = 0;
+            
+            for (const action of pendingActions) {
+                try {
+                    console.log(`📤 Syncing ${action.actionType} for job ${action.jobId}`);
+                    
+                    switch (action.actionType) {
+                        case 'receive':
+                            await apiClient.post<Job>(`/jobs/${action.jobId}/receive`);
+                            break;
+                        case 'start':
+                            await apiClient.post<Job>(`/jobs/${action.jobId}/start`);
+                            break;
+                        case 'sleep':
+                            const sleepData = action.actionData ? JSON.parse(action.actionData) : {};
+                            await apiClient.post<Job>(`/jobs/${action.jobId}/sleep`, sleepData);
+                            break;
+                        case 'finish':
+                            await apiClient.post<Job>(`/jobs/${action.jobId}/finish`);
+                            break;
+                    }
+                    
+                    await offlineActionsService.markAsSynced(action.id!);
+                    successCount++;
+                    console.log(`✅ Synced ${action.actionType} successfully`);
+                } catch (error: any) {
+                    console.log(`❌ Failed to sync ${action.actionType}:`, error);
+                    failCount++;
+                }
+            }
+            
+            // Clean up synced actions
+            await offlineActionsService.clearSyncedActions();
+            await checkPendingActions();
+            
+            // Refresh job after sync to get latest from server
+            await fetchJob();
+            
+            if (failCount === 0) {
+                Alert.alert('Sync Complete', `Successfully synced ${successCount} action(s).`);
+            } else {
+                Alert.alert('Sync Partial', `Synced ${successCount} action(s), but ${failCount} failed. Please try again later.`);
+            }
+        } catch (error: any) {
+            console.log('❌ Error syncing actions:', error);
+            Alert.alert('Sync Error', 'Failed to sync actions. Please try again.');
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
     const getStatusText = (): string => {
         switch (currentStep) {
             case 'receive':
@@ -266,15 +761,26 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
 
             case 'sleep':
                 return (
-                    <>
+                    <View style={styles.twoButtonsRow}>
                         <TouchableOpacity
-                            style={[styles.sleepButton, actionLoading && styles.buttonDisabled]}
+                            style={[styles.sleepButton, styles.halfButton, actionLoading && styles.buttonDisabled]}
                             onPress={handleSleep}
                             disabled={actionLoading}
                         >
-                            <Text style={styles.buttonText}>Log Sleep</Text>
+                            <Text style={styles.buttonText}>Sleep</Text>
                         </TouchableOpacity>
-                    </>
+                        <TouchableOpacity
+                            style={[styles.finishButton, styles.halfButton, actionLoading && styles.buttonDisabled]}
+                            onPress={handleFinish}
+                            disabled={actionLoading}
+                        >
+                            {actionLoading ? (
+                                <ActivityIndicator color={colors.white}/>
+                            ) : (
+                                <Text style={styles.buttonText}>End Job</Text>
+                            )}
+                        </TouchableOpacity>
+                    </View>
                 );
 
             case 'finish':
@@ -313,56 +819,54 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
                             </View>
                             <Text style={styles.headerTitle}>Iron Wheels</Text>
                         </View>
+                        <NetworkIndicator />
                     </View>
+
+                    {/* Sync Bar */}
+                    <SyncBar 
+                        pendingCount={pendingActionsCount}
+                        onSync={handleSyncActions}
+                        isSyncing={isSyncing}
+                        isAutoSyncing={isAutoSyncing}
+                    />
 
                     {/* Content */}
                     <ScrollView
-                        style={styles.scrollView}
-                        contentContainerStyle={styles.content}
+                        style={styles.contentContainer}
+                        contentContainerStyle={styles.scrollContent}
+                        refreshControl={
+                            <RefreshControl
+                                refreshing={refreshing}
+                                onRefresh={onRefresh}
+                                colors={[colors.primary]}
+                                tintColor={colors.primary}
+                                title="Loading jobs..."
+                                titleColor={colors.textSecondary}
+                            />
+                        }
+                        showsVerticalScrollIndicator={false}
                     >
                         {loading ? (
                                 <View style={styles.loadingContainer}>
                                     <ActivityIndicator size="large" color={colors.primary}/>
                                     <Text style={styles.loadingText}>Loading job...</Text>
                                 </View>
-                            ) :
-                            job?.isFinished === false ? (<View style={styles.card}>
+                            )
+                            :
+                            job?.isFinished === false ? (<View style={styles.cardFullScreen}>
                                 {/* Status Badge */}
                                 <View style={styles.statusBadge}>
                                     <Text style={styles.statusText}>{getStatusText()}</Text>
                                 </View>
 
-                                {/* Job Info Section */}
-                                <View style={styles.section}>
-                                    <Text style={styles.sectionTitle}>Job Details</Text>
-                                    <View style={styles.infoRow}>
-                                        <Text style={styles.label}>Description:</Text>
-                                        <Text style={styles.value}>{job.description}</Text>
-                                    </View>
-                                    <View style={styles.infoRow}>
-                                        <Text style={styles.label}>From:</Text>
-                                        <Text style={styles.value}>{job.startCountry}</Text>
-                                    </View>
-                                    <View style={styles.infoRow}>
-                                        <Text style={styles.label}>To:</Text>
-                                        <Text style={styles.value}>{job.deliveryCountry}</Text>
-                                    </View>
-                                    <View style={styles.sleepRow}>
-                                        <View style={styles.sleepItem}>
-                                            <Text style={styles.sleepLabel}>Sleep Sweden:</Text>
-                                            <Text style={styles.sleepValue}>{job.sleepSweden}</Text>
-                                        </View>
-                                        <View style={styles.sleepItem}>
-                                            <Text style={styles.sleepLabel}>Sleep Norway:</Text>
-                                            <Text style={styles.sleepValue}>{job.sleepNorway}</Text>
-                                        </View>
-                                    </View>
-                                </View>
-
-                                {/* Single Action Button */}
-                                <View style={styles.buttonContainer}>
-                                    {renderActionButton()}
-                                </View>
+                                {/* Job Info Section - Scrollable */}
+                                <ScrollView
+                                    style={styles.descriptionScrollView}
+                                    contentContainerStyle={styles.descriptionContent}
+                                    showsVerticalScrollIndicator={true}
+                                >
+                                    <Text style={styles.descriptionText}>{job.description}</Text>
+                                </ScrollView>
                             </View>) : message ?
                                 (
                                     <View style={styles.emptyContainer}>
@@ -390,6 +894,13 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
                                 )
                         }
                     </ScrollView>
+
+                    {/* Fixed Action Button at Bottom */}
+                    {job?.id! && !job.isFinished && currentStep && !loading && (
+                        <View style={styles.fixedButtonContainer}>
+                            {renderActionButton()}
+                        </View>
+                    )}
 
                     {/* Modal for Country Selection */}
                     <Modal
@@ -438,6 +949,22 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
                             </View>
                         </View>
                     </Modal>
+                    <ConfirmationModal
+                        visible={confirmationModalVisible}
+                        title={confirmationConfig.title}
+                        message={confirmationConfig.message}
+                        onCancel={() => setConfirmationModalVisible(false)}
+                        onConfirm={confirmationConfig.onConfirm}
+                        confirmText={confirmationConfig.confirmText}
+                    />
+                    
+                    {/* Offline Warning Modal */}
+                    <OfflineWarningModal
+                        visible={offlineWarningVisible}
+                        actionType={pendingActionType || 'receive'}
+                        onCancel={handleOfflineWarningCancel}
+                        onContinue={handleOfflineWarningContinue}
+                    />
                 </View>
             </SafeAreaView>
         </View>
@@ -459,7 +986,7 @@ const styles = StyleSheet.create({
     },
     header: {
         flexDirection: 'row',
-        justifyContent: 'flex-start',
+        justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: 20,
         paddingTop: 48,
@@ -512,11 +1039,47 @@ const styles = StyleSheet.create({
         color: colors.textSecondary,
         fontWeight: '500',
     },
+    contentContainer: {
+        flex: 1,
+    },
+    scrollContent: {
+        flexGrow: 1,
+        padding: 16,
+        paddingBottom: 100, // Space for fixed button + margin
+    },
+    cardFullScreen: {
+        flex: 1,
+        backgroundColor: colors.white,
+        borderRadius: 16,
+        padding: 20,
+        marginBottom: 20, // Separation with fixed button
+        shadowColor: colors.text,
+        shadowOffset: {width: 0, height: 2},
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+        elevation: 3,
+        borderLeftWidth: 4,
+        borderLeftColor: colors.primary,
+    },
+    descriptionScrollView: {
+        flex: 1,
+        marginTop: 16,
+    },
+    descriptionContent: {
+        flexGrow: 1,
+    },
+    descriptionText: {
+        fontSize: 16,
+        color: colors.text,
+        lineHeight: 24,
+        fontWeight: '500',
+    },
     scrollView: {
         flex: 1,
     },
     content: {
         padding: 16,
+        paddingBottom: 100, // Extra space for fixed button
     },
     card: {
         backgroundColor: colors.white,
@@ -608,8 +1171,30 @@ const styles = StyleSheet.create({
         color: colors.info,
         fontWeight: 'bold',
     },
-    buttonContainer: {
-        marginTop: 8,
+    fixedButtonContainer: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: colors.white,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        paddingBottom: 24,
+        borderTopWidth: 1,
+        borderTopColor: colors.lightGray,
+        shadowColor: '#000',
+        shadowOffset: {width: 0, height: -2},
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 8,
+    },
+    twoButtonsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        gap: 12,
+    },
+    halfButton: {
+        flex: 1,
     },
     receiveButton: {
         backgroundColor: colors.info,
@@ -621,7 +1206,6 @@ const styles = StyleSheet.create({
         shadowOffset: {width: 0, height: 2},
         shadowOpacity: 0.3,
         shadowRadius: 4,
-        marginTop: 8,
     },
     startButton: {
         backgroundColor: colors.warning,
@@ -633,7 +1217,6 @@ const styles = StyleSheet.create({
         shadowOffset: {width: 0, height: 2},
         shadowOpacity: 0.3,
         shadowRadius: 4,
-        marginTop: 8,
     },
     sleepButton: {
         backgroundColor: colors.purple,
@@ -645,7 +1228,6 @@ const styles = StyleSheet.create({
         shadowOffset: {width: 0, height: 2},
         shadowOpacity: 0.3,
         shadowRadius: 4,
-        marginTop: 8,
     },
     finishButton: {
         backgroundColor: colors.success,
@@ -657,11 +1239,10 @@ const styles = StyleSheet.create({
         shadowOffset: {width: 0, height: 2},
         shadowOpacity: 0.3,
         shadowRadius: 4,
-        marginTop: 8,
     },
     buttonText: {
         color: colors.white,
-        fontSize: 16,
+        fontSize: 24,
         fontWeight: '700',
         letterSpacing: 0.5,
     },

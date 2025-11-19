@@ -1,140 +1,373 @@
-# Iron_Wheels
+# 🔔 Firebase Notification Service
 
-This project is a React Native application.
+Service de notifications Firebase professionnel et complet pour Node.js avec support Firestore.
 
-## Setup Steps
+## 📁 Structure du Projet
 
-To set up and run this project locally, follow these steps:
+```
+iron_wheels/
+├── send-notification.js      # Classe NotificationService (principale)
+├── config.js                 # Configuration centralisée
+├── examples.js               # Exemples d'utilisation
+├── keyFirebase.json          # Clé de service Firebase (à protéger!)
+├── firestore.indexes.json    # Définition des index Firestore
+├── NOTIFICATION_GUIDE.md     # Guide complet des notifications FCM
+├── FIRESTORE_INDEXES.md      # Guide des index Firestore
+└── README.md                 # Ce fichier
+```
 
-### Prerequisites
+## ✨ Fonctionnalités
 
-Make sure you have the following installed on your system:
+✅ **Envoi de notifications**
+- Notification simple vers un appareil
+- Notifications multicast (plusieurs appareils)
+- Données personnalisées avec les notifications
 
-- Node.js (LTS version recommended)
-- npm or Yarn
-- React Native CLI (`npm install -g react-native-cli` or `yarn global add react-native-cli`)
-- JDK (Java Development Kit) for Android development
-- Android Studio with Android SDK (for Android development)
-- Xcode with Command Line Tools (for iOS development)
-- CocoaPods (for iOS development: `sudo gem install cocoapods`)
+✅ **Gestion Firestore**
+- Enregistrement automatique des notifications
+- Récupération des notifications (avec/sans filtre)
+- Mise à jour des notifications
+- Suppression des notifications
 
-### SDK Configuration
+✅ **Gestion des erreurs**
+- Messages d'erreur clairs et localisés
+- Suggestions de résolution automatiques
+- Support pour les tokens invalides/expirés
+- Pas de crash, retours structurés
 
-#### Android SDK
+✅ **Optimisations**
+- Requêtes Firestore optimisées (pas besoin d'index composite)
+- Tri en mémoire pour éviter les index
+- Validation des tokens
+- Conversion automatique des données
 
--   **Check Installed SDK Versions:** Open Android Studio, navigate to `SDK Manager` (Tools > SDK Manager). Here you can see installed SDK Platforms and SDK Tools.
--   **Install/Update SDK:** If you need a specific SDK version, select it in the `SDK Platforms` tab and click "Apply" to install. Ensure you have the SDK Platform and Build-Tools corresponding to your project's `compileSdkVersion` and `targetSdkVersion` (found in `android/app/build.gradle`).
+## 🚀 Installation
 
-#### iOS SDK (Xcode)
+```bash
+# 1. Installer les dépendances
+npm install firebase-admin
 
--   **Check Installed SDK Versions:** Open Xcode, go to `Xcode > Settings > Platforms`. This shows the installed iOS SDKs.
--   **Install/Update SDK:** iOS SDKs are typically bundled with Xcode versions. To get a newer SDK, you usually need to update Xcode itself via the Mac App Store.
+# 2. Obtenir keyFirebase.json depuis Firebase Console
+# Firebase Console > Project Settings > Service Accounts > Generate New Private Key
 
-### Installation
+# 3. Configurer le chemin dans config.js
+```
 
-1.  **Clone the repository:**
-    ```bash
-    git clone <repository_url>
-    cd Iron_Wheels
-    ```
-    (Replace `<repository_url>` with the actual URL of your repository)
+## 📖 Utilisation Rapide
 
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    # or
-    yarn install
-    ```
+### Exemple Basique
 
-3.  **For iOS development (if applicable):**
-    Navigate to the `ios` directory and install CocoaPods:
-    ```bash
-    cd ios
-    pod install
-    cd ..
-    ```
+```javascript
+const NotificationService = require('./send-notification');
 
-### Running the Project
+// Initialiser le service
+const service = new NotificationService("./keyFirebase.json");
+service.initialize();
 
-#### Android
+// Envoyer une notification
+const result = await service.sendNotification(
+    "FCM_TOKEN_ICI",
+    {
+        title: "🎉 Titre",
+        body: "Message de la notification"
+    },
+    {
+        type: "promo",
+        screen: "Offers",
+        id: "123"
+    }
+);
 
-1.  **Start the Metro Bundler:**
-    ```bash
-    npm start
-    # or
-    yarn start
-    ```
-    Leave this terminal window open.
+if (result.success) {
+    console.log("✅ Envoyé!", result.messageId);
+} else {
+    console.log("❌ Erreur:", result.error.message);
+}
+```
 
-2.  **Run on Android emulator or device:**
-    Open a new terminal window and run:
-    ```bash
-    npm run android
-    # or
-    yarn android
-    ```
-    Ensure you have an Android emulator running or a device connected and configured for development.
+### Avec Configuration
 
-#### iOS
+```javascript
+const NotificationService = require('./send-notification');
+const config = require('./config');
 
-1.  **Start the Metro Bundler:**
-    ```bash
-    npm start
-    # or
-    yarn start
-    ```
-    Leave this terminal window open.
+const service = new NotificationService(config.serviceAccountPath);
+service.initialize();
 
-2.  **Run on iOS simulator or device:**
-    Open a new terminal window and run:
-    ```bash
-    npm run ios
-    # or
-    yarn ios
-    ```
-    Ensure you have an iOS simulator running or a device connected and configured for development.
+// Utiliser les tokens de config
+const result = await service.sendNotification(
+    config.testTokens.device1,
+    { title: "Test", body: "Message" },
+    { type: "test", id: "1" }
+);
+```
 
-### Building the Project
+## 📚 Exemples Complets
 
-#### Android
+### 1. Notification Simple
 
-To build a release APK or AAB:
+```javascript
+const service = new NotificationService("./keyFirebase.json");
+service.initialize();
 
-1.  Navigate to the `android` directory:
-    ```bash
-    cd android
-    ```
-2.  Clean the project:
-    ```bash
-    ./gradlew clean
-    ```
-3.  Build the release bundle (AAB) or APK:
-    ```bash
-    ./gradlew bundleRelease # For AAB
-    # or
-    ./gradlew assembleRelease # For APK
-    ```
-    The output files will be located in `android/app/build/outputs/`.
+await service.sendNotification(
+    token,
+    { title: "Bienvenue!", body: "Merci de nous rejoindre." },
+    { type: "welcome", screen: "Home", id: "w1" }
+);
+```
 
-#### iOS
+### 2. Notifications Multiples
 
-To build a release IPA:
+```javascript
+const tokens = ["token1", "token2", "token3"];
 
-1.  Navigate to the `ios` directory:
-    ```bash
-    cd ios
-    ```
-2.  Open the `.xcworkspace` file in Xcode.
-3.  In Xcode, select `Product > Scheme > Edit Scheme...` and set the build configuration to `Release`.
-4.  Select `Product > Archive` to build the application for distribution.
-    Alternatively, you can build from the command line:
-    ```bash
-    xcodebuild -workspace mobile_iron.xcworkspace -scheme mobile_iron -configuration Release -sdk iphoneos archive -archivePath ./build/mobile_iron.xcarchive
-    ```
-    This will create an archive that can be exported as an IPA.
+const result = await service.sendMulticastNotification(
+    tokens,
+    { title: "Alerte Groupe", body: "Nouveau message" },
+    { type: "alert", id: "a1" }
+);
 
-### Troubleshooting
+console.log(`Succès: ${result.successCount}, Échecs: ${result.failureCount}`);
+```
 
-- If you encounter issues, try resetting the Metro cache: `npm start -- --reset-cache` or `yarn start -- --reset-cache`.
-- For Android, ensure your `ANDROID_HOME` environment variable is set correctly.
-- For iOS, clean the build folder in Xcode (`Product > Clean Build Folder`) and try `pod install` again.
+### 3. Gestion Firestore
+
+```javascript
+// Récupérer toutes les notifications
+const all = await service.getAllNotifications();
+
+// Récupérer par ID
+const filtered = await service.getAllNotifications("promo-001");
+
+// Mettre à jour
+await service.updateNotificationById("promo-001", {
+    title: "Nouveau titre",
+    body: "Nouveau message"
+});
+
+// Supprimer
+await service.deleteNotificationById("promo-001");
+```
+
+### 4. Avec Retry
+
+```javascript
+async function sendWithRetry(token, notification, data, maxRetries = 3) {
+    for (let i = 1; i <= maxRetries; i++) {
+        const result = await service.sendNotification(token, notification, data);
+        
+        if (result.success) {
+            return result;
+        }
+        
+        if (i < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+    }
+    
+    return { success: false, error: { message: "Max retries exceeded" } };
+}
+```
+
+## 🎮 Tester
+
+### Test Basique
+
+```bash
+# Modifier le token dans send-notification.js (ligne ~312)
+node send-notification.js
+```
+
+### Exemples Interactifs
+
+```bash
+# Éditer examples.js et décommenter les exemples souhaités
+node examples.js
+```
+
+## 🔧 API Reference
+
+### `new NotificationService(serviceAccountPath)`
+
+Crée une nouvelle instance du service.
+
+**Paramètres:**
+- `serviceAccountPath` (string): Chemin vers keyFirebase.json
+
+### `initialize()`
+
+Initialise Firebase Admin SDK. À appeler une seule fois.
+
+### `sendNotification(fcmToken, notification, data)`
+
+Envoie une notification à un appareil.
+
+**Paramètres:**
+- `fcmToken` (string): Token FCM de l'appareil
+- `notification` (object): `{title, body}`
+- `data` (object): Données personnalisées
+
+**Retour:**
+```javascript
+{
+    success: boolean,
+    messageId: string | null,
+    error: {
+        code: string,
+        message: string,
+        suggestion: string,
+        originalError: string
+    } | null
+}
+```
+
+### `sendMulticastNotification(fcmTokens, notification, data)`
+
+Envoie une notification à plusieurs appareils.
+
+**Paramètres:**
+- `fcmTokens` (array): Liste de tokens FCM
+- `notification` (object): `{title, body}`
+- `data` (object): Données personnalisées
+
+**Retour:**
+```javascript
+{
+    successCount: number,
+    failureCount: number,
+    responses: array
+}
+```
+
+### `getAllNotifications(notificationId?)`
+
+Récupère les notifications depuis Firestore.
+
+**Paramètres:**
+- `notificationId` (string, optionnel): Filtrer par ID
+
+**Retour:** `Array<Object>`
+
+### `updateNotificationById(notificationId, newData)`
+
+Met à jour des notifications par ID.
+
+**Paramètres:**
+- `notificationId` (string): ID de la notification
+- `newData` (object): Nouvelles données
+
+**Retour:** `number` (nombre de docs mis à jour)
+
+### `deleteNotificationById(notificationId)`
+
+Supprime des notifications par ID.
+
+**Paramètres:**
+- `notificationId` (string): ID de la notification
+
+**Retour:** `number` (nombre de docs supprimés)
+
+### `isValidTokenFormat(token)`
+
+Valide le format d'un token FCM.
+
+**Paramètres:**
+- `token` (string): Token à valider
+
+**Retour:** `boolean`
+
+## 🐛 Résolution des Problèmes
+
+### Token Invalide / Expiré
+
+```
+❌ Token invalide ou expiré
+💡 Le token n'est plus valide. L'appareil doit se réenregistrer.
+```
+
+**Solution:** Obtenir un nouveau token FCM depuis l'application mobile.
+Voir `NOTIFICATION_GUIDE.md` pour plus de détails.
+
+### Erreur d'Index Firestore
+
+```
+❌ The query requires an index
+```
+
+**Solution:** Le code est déjà optimisé pour éviter ce problème.
+Si vous voulez quand même créer l'index, voir `FIRESTORE_INDEXES.md`.
+
+### Erreur d'Authentification
+
+```
+❌ Erreur d'authentification Firebase
+```
+
+**Solution:** Vérifier que `keyFirebase.json` est correct et à jour.
+
+## 📖 Documentation Complète
+
+- **NOTIFICATION_GUIDE.md** - Guide complet pour obtenir des tokens FCM
+- **FIRESTORE_INDEXES.md** - Guide de configuration des index Firestore
+- **examples.js** - Exemples d'utilisation détaillés
+
+## 🔒 Sécurité
+
+⚠️ **IMPORTANT:** 
+- Ne jamais commit `keyFirebase.json` dans Git
+- Ajouter à `.gitignore`
+- Utiliser des variables d'environnement en production
+- Valider tous les tokens avant envoi
+
+## 📊 Performance
+
+- ✅ Supporte des milliers de notifications
+- ✅ Tri optimisé en mémoire
+- ✅ Pas besoin d'index composite
+- ✅ Gestion efficace des erreurs
+
+## 🤝 Intégration Odoo
+
+### Backend Python
+
+```python
+# Exemple d'intégration avec Odoo
+from odoo import models, api
+import requests
+
+class NotificationManager(models.Model):
+    _name = 'notification.manager'
+    
+    @api.model
+    def send_to_user(self, user_id, title, body):
+        user = self.env['res.users'].browse(user_id)
+        
+        response = requests.post(
+            'http://localhost:3000/send',
+            json={
+                'token': user.fcm_token,
+                'notification': {'title': title, 'body': body},
+                'data': {'user_id': str(user_id)}
+            }
+        )
+        
+        return response.json()
+```
+
+## 📝 Licence
+
+MIT License - Libre d'utilisation
+
+## 👨‍💻 Support
+
+Pour toute question ou problème:
+1. Consulter la documentation complète
+2. Vérifier les exemples dans `examples.js`
+3. Consulter les guides spécifiques (NOTIFICATION_GUIDE.md, FIRESTORE_INDEXES.md)
+
+---
+
+**Version:** 1.0.0  
+**Dernière mise à jour:** 2025  
+**Status:** ✅ Production Ready

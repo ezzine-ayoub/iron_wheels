@@ -76,7 +76,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    paddingBottom: 24,
+    paddingBottom: 35,
   },
   tab: {
     flex: 1,

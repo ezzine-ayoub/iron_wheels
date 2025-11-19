@@ -21,12 +21,12 @@ const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
   visible,
   onClose,
 }) => {
-  const [email, setEmail] = useState('');
+  const [driverNo, setDriverNo] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleResetPassword = async () => {
-    if (!email) {
-      Alert.alert('Missing Information', 'Please enter your email', [
+    if (!driverNo) {
+      Alert.alert('Missing Information', 'Please enter your driver number', [
         {text: 'OK'},
       ]);
       return;
@@ -35,10 +35,10 @@ const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
     setLoading(true);
 
     try {
-      await authService.forgotPassword(email);
+      await authService.forgotPassword(driverNo);
       Alert.alert(
         'Success',
-        'A password reset link has been sent to your email.',
+        'A password reset link has been sent to your registered contact.',
         [{text: 'OK', onPress: onClose}],
       );
     } catch (error: any) {
@@ -57,12 +57,12 @@ const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
           <Text style={styles.title}>Forgot Password</Text>
           <TextInput
             style={styles.input}
-            placeholder="Enter your email"
-            value={email}
-            onChangeText={setEmail}
+            placeholder="Enter your driver number"
+            value={driverNo}
+            onChangeText={setDriverNo}
             autoCapitalize="none"
             autoCorrect={false}
-            keyboardType="email-address"
+            keyboardType="default"
             placeholderTextColor={colors.textSecondary}
           />
           <TouchableOpacity
