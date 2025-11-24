@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "605752797835",
+    "project_id": "daisyconsulting-ayoubezzine",
+    "storage_bucket": "daisyconsulting-ayoubezzine.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:605752797835:android:63cc9a1ebf32e3c936828e",
+        "android_client_info": {
+          "package_name": "com.pushNotification.ayoubezzine"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBoM9CbIEOPpA3SU3zNSLM_ykNGYm2GbCs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
