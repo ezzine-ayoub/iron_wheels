@@ -22,25 +22,25 @@ const MainTabs: React.FC<MainTabsProps> = ({ onLogout }) => {
         const title = remoteMessage.notification?.title || remoteMessage.data?.title || 'New Notification';
         const body = remoteMessage.notification?.body || remoteMessage.data?.body || 'You have a new message';
         
-        // Show alert for foreground notifications
-        Alert.alert(
-          title,
-          body,
-          [
-            { text: 'Dismiss', style: 'cancel' },
-            { 
-              text: 'View', 
-              onPress: () => {
-                // Handle navigation based on notification data
-                if (remoteMessage.data?.screen === 'home') {
-                  setActiveTab('home');
-                } else if (remoteMessage.data?.screen === 'profile') {
-                  setActiveTab('profile');
-                }
-              }
-            }
-          ]
-        );
+        // // Show alert for foreground notifications
+        // Alert.alert(
+        //   title,
+        //   body,
+        //   [
+        //     { text: 'Dismiss', style: 'cancel' },
+        //     {
+        //       text: 'View',
+        //       onPress: () => {
+        //         // Handle navigation based on notification data
+        //         if (remoteMessage.data?.screen === 'home') {
+        //           setActiveTab('home');
+        //         } else if (remoteMessage.data?.screen === 'profile') {
+        //           setActiveTab('profile');
+        //         }
+        //       }
+        //     }
+        //   ]
+        // );
       });
       
       // Handle notification that opened the app (background/quit state)

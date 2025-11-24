@@ -1,12 +1,13 @@
 // AuthService - API REST Authentication
-import authStorageService from './authStorageService';
-import {API_BASE_URL} from "./apiClient.ts";
+import storageService from './storageService';
+import { API_BASE_URL } from "./apiClient";
+import messaging from "@react-native-firebase/messaging";
 
 // Session expiration: 7 days in milliseconds
-const SESSION_EXPIRATION_TIME = 7 * 24 * 60 * 60 * 1000; // 7 days
+const SESSION_EXPIRATION_TIME = 7 * 24 * 60 * 60 * 1000;
 
 // Access token expiration: 1 hour (55 minutes for refresh before expiration)
-const ACCESS_TOKEN_EXPIRATION = 55 * 60 * 1000; // 55 minutes
+const ACCESS_TOKEN_EXPIRATION = 55 * 60 * 1000;
 
 // Interface for API response
 interface ApiLoginResponse {
@@ -22,6 +23,7 @@ interface ApiLoginResponse {
         driverNo: string;
         phone: string;
         personalNo: string;
+        fcmToken: string;
         employed: boolean;
         createdAt: string;
         updatedAt: string;
@@ -39,10 +41,11 @@ interface UserAuthSession {
     personalNo: string;
     driverNo: string;
     employed: boolean;
+    fcmToken: string;
     passwordChanged: boolean;
     profileCompleted: boolean;
     timestamp: number;
-    tokenRefreshedAt: number; // 🆕 Date of last token refresh
+    tokenRefreshedAt: number;
 }
 
 export interface AuthUser {
@@ -53,6 +56,7 @@ export interface AuthUser {
     personalNo: string;
     employed: boolean;
     driverNo: string;
+    fcmToken: string;
     passwordChanged: boolean;
     profileCompleted: boolean;
 }
@@ -67,6 +71,7 @@ export interface AuthResponse {
     personalNo: string;
     employed: boolean;
     driverNo: string;
+    fcmToken: string;
     passwordChanged: boolean;
     profileCompleted: boolean;
 }
@@ -87,43 +92,22 @@ export interface ChangePasswordResponse {
     message: string;
 }
 
-// SQLite Storage Configuration - Unlimited sessions
+// Storage keys
 const STORAGE_KEYS = {
     SESSION: '@iron_wheels_session',
     CREDENTIALS: '@iron_wheels_credentials',
     USER_INFO: '@iron_wheels_user_info',
 };
 
-// 🆕 Callback to notify session expiration
+// Session expiration callback
 type SessionExpiredCallback = () => void;
 let sessionExpiredCallback: SessionExpiredCallback | null = null;
-
-// ==================== STORAGE HELPERS ====================
-
-async function saveToStorage(key: string, value: any): Promise<boolean> {
-    try {
-        await authStorageService.save(key, value);
-        return true;
-    } catch (error) {
-        console.log(`❌ Error saving to Storage ${key}:`, error);
-        return false;
-    }
-}
-
-async function getFromStorage(key: string): Promise<any | null> {
-    try {
-        return await authStorageService.get(key);
-    } catch (error) {
-        console.log(`❌ Error retrieving from Storage ${key}:`, error);
-        return null;
-    }
-}
 
 // ==================== AUTHENTICATION SERVICE ====================
 
 export const authService = {
     /**
-     * 🆕 REGISTER: Callback for session expiration
+     * Register callback for session expiration
      */
     onSessionExpired(callback: SessionExpiredCallback): void {
         sessionExpiredCallback = callback;
@@ -131,7 +115,7 @@ export const authService = {
     },
 
     /**
-     * 🆕 NOTIFY: Session expiration
+     * Notify session expiration
      */
     notifySessionExpired(): void {
         if (sessionExpiredCallback) {
@@ -141,13 +125,12 @@ export const authService = {
     },
 
     /**
-     * ✅ LOGIN: Authentication with API
+     * Login with API
      */
     async login(credentials: LoginCredentials): Promise<AuthResponse> {
         try {
             console.log('🔐 Login attempt...', credentials.driverNo);
-            console.log(`${API_BASE_URL}/auth/login`)
-            console.log(credentials)
+
             const response = await fetch(`${API_BASE_URL}/auth/login`, {
                 method: 'POST',
                 headers: {
@@ -155,40 +138,35 @@ export const authService = {
                 },
                 body: JSON.stringify(credentials),
             });
+
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
                 
-                // Specific handling of login errors
                 if (response.status === 401) {
                     throw new Error('Incorrect driver number or password');
                 }
-                
                 if (response.status === 400) {
                     throw new Error('Invalid login credentials');
                 }
-                
                 if (response.status === 500) {
                     throw new Error('Server error, please try again');
                 }
                 
-                // Default message
                 throw new Error(errorData.message || 'Login failed');
             }
 
             const data: ApiLoginResponse = await response.json();
             console.log("Login response data: ", data);
 
-            // 🆕 If passwordChanged === false, DO NOT save the session
+            // If passwordChanged === false, DO NOT save the session
             if (!data.user.passwordChanged) {
                 console.log('⚠️ passwordChanged = false, session NOT saved');
                 
-                // Save ONLY temporary credentials for password change
-                await saveToStorage(STORAGE_KEYS.CREDENTIALS, {
+                await storageService.save(STORAGE_KEYS.CREDENTIALS, {
                     driverNo: credentials.driverNo,
                     password: credentials.password,
                 });
                 
-                // Return data without saving session
                 return {
                     id: data.user.id,
                     accessToken: data.accessToken,
@@ -199,15 +177,15 @@ export const authService = {
                     personalNo: data.user.personalNo,
                     employed: data.user.employed,
                     driverNo: data.user.driverNo,
+                    fcmToken: data.user.fcmToken,
                     passwordChanged: data.user.passwordChanged,
                     profileCompleted: data.profileCompleted,
                 };
             }
 
-            // ✅ passwordChanged === true, save session normally
+            // passwordChanged === true, save session normally
             console.log('✅ passwordChanged = true, saving session...');
             
-            // Create session
             const sessionData: UserAuthSession = {
                 id: data.user.id,
                 accessToken: data.accessToken,
@@ -218,15 +196,15 @@ export const authService = {
                 personalNo: data.user.personalNo,
                 driverNo: data.user.driverNo,
                 employed: data.user.employed,
+                fcmToken: data.user.fcmToken,
                 passwordChanged: data.user.passwordChanged,
                 profileCompleted: data.profileCompleted,
                 timestamp: Date.now(),
-                tokenRefreshedAt: Date.now(), // 🆕 Initialize refresh date
+                tokenRefreshedAt: Date.now(),
             };
 
-            // Save to storage
-            await saveToStorage(STORAGE_KEYS.SESSION, sessionData);
-            await saveToStorage(STORAGE_KEYS.CREDENTIALS, {
+            await storageService.save(STORAGE_KEYS.SESSION, sessionData);
+            await storageService.save(STORAGE_KEYS.CREDENTIALS, {
                 driverNo: credentials.driverNo,
                 password: credentials.password,
             });
@@ -243,6 +221,7 @@ export const authService = {
                 personalNo: data.user.personalNo,
                 employed: data.user.employed,
                 driverNo: data.user.driverNo,
+                fcmToken: data.user.fcmToken,
                 passwordChanged: data.user.passwordChanged,
                 profileCompleted: data.profileCompleted,
             };
@@ -254,17 +233,16 @@ export const authService = {
     },
 
     /**
-     * ✅ CHECK: Authenticated session
+     * Check authenticated session
      */
     async isAuthenticated(): Promise<boolean> {
         try {
-            const sessionData = await getFromStorage(STORAGE_KEYS.SESSION);
+            const sessionData = await storageService.get(STORAGE_KEYS.SESSION);
             
             if (!sessionData || !sessionData.accessToken) {
                 return false;
             }
 
-            // Check if session has expired (7 days)
             const currentTime = Date.now();
             const sessionAge = currentTime - sessionData.timestamp;
             
@@ -282,20 +260,17 @@ export const authService = {
     },
 
     /**
-     * ✅ RETRIEVE: Auth data
+     * Get stored auth data
      */
     async getStoredAuthData(): Promise<AuthResponse | null> {
         try {
-            const sessionData = await getFromStorage(STORAGE_KEYS.SESSION);
-            
-            console.log('🔍 getStoredAuthData - sessionData:', sessionData);
+            const sessionData = await storageService.get(STORAGE_KEYS.SESSION);
             
             if (!sessionData) {
-                console.log('⚠️ No sessionData found in storage');
                 return null;
             }
 
-            const authResponse = {
+            return {
                 id: sessionData.id,
                 accessToken: sessionData.accessToken,
                 refreshToken: sessionData.refreshToken,
@@ -305,13 +280,10 @@ export const authService = {
                 personalNo: sessionData.personalNo,
                 employed: sessionData.employed,
                 driverNo: sessionData.driverNo,
+                fcmToken: sessionData.fcmToken,
                 passwordChanged: sessionData.passwordChanged,
                 profileCompleted: sessionData.profileCompleted,
             };
-            
-            console.log('✅ Returning authResponse with ID:', authResponse.id);
-            
-            return authResponse;
 
         } catch (error) {
             console.log('❌ Error in getStoredAuthData:', error);
@@ -320,7 +292,7 @@ export const authService = {
     },
 
     /**
-     * ✅ USER: Retrieve current user
+     * Get current user
      */
     async getCurrentUser(): Promise<AuthUser | null> {
         try {
@@ -338,6 +310,7 @@ export const authService = {
                 personalNo: authData.personalNo,
                 employed: authData.employed,
                 driverNo: authData.driverNo,
+                fcmToken: authData.fcmToken,
                 passwordChanged: authData.passwordChanged,
                 profileCompleted: authData.profileCompleted,
             };
@@ -348,7 +321,7 @@ export const authService = {
     },
 
     /**
-     * ✅ TOKEN: Retrieve access token
+     * Get access token
      */
     async getAccessToken(): Promise<string | null> {
         try {
@@ -361,17 +334,16 @@ export const authService = {
     },
 
     /**
-     * ✅ CHECK: Valid session
+     * Check valid session
      */
     async isSessionValid(): Promise<boolean> {
         try {
-            const sessionData = await getFromStorage(STORAGE_KEYS.SESSION);
+            const sessionData = await storageService.get(STORAGE_KEYS.SESSION);
             
             if (!sessionData || !sessionData.accessToken) {
                 return false;
             }
 
-            // Check if session has expired (7 days)
             const currentTime = Date.now();
             const sessionAge = currentTime - sessionData.timestamp;
             
@@ -390,16 +362,16 @@ export const authService = {
     },
 
     /**
-     * ✅ LOGOUT: Cleanup
+     * Logout
      */
     async logout(): Promise<void> {
         try {
-            await authStorageService.multiRemove([
+            await storageService.multiRemove([
                 STORAGE_KEYS.SESSION,
                 STORAGE_KEYS.CREDENTIALS,
                 STORAGE_KEYS.USER_INFO,
             ]);
-
+            await messaging().deleteToken();
             console.log('✅ Logout successful');
 
         } catch (error) {
@@ -408,12 +380,10 @@ export const authService = {
     },
 
     /**
-     * 🆕 CHANGE PASSWORD
+     * Change password
      */
     async changePassword(payload: ChangePasswordPayload): Promise<ChangePasswordResponse> {
         try {
-
-
             const accessToken = payload.response?.accessToken;
             
             if (!accessToken) {
@@ -438,7 +408,6 @@ export const authService = {
                 if (response.status === 401) {
                     throw new Error('Incorrect old password');
                 }
-                
                 if (response.status === 400) {
                     throw new Error('Invalid new password');
                 }
@@ -448,7 +417,7 @@ export const authService = {
 
             const data = await response.json();
             
-            // 🆕 NOW save complete session with passwordChanged = true
+            // Save complete session with passwordChanged = true
             if (payload.response) {
                 const sessionData: UserAuthSession = {
                     id: payload.response.id,
@@ -459,21 +428,21 @@ export const authService = {
                     phone: payload.response.phone,
                     personalNo: payload.response.personalNo,
                     employed: payload.response.employed,
-                    passwordChanged: true, // 🆕 Mark as changed
+                    driverNo: payload.response.driverNo,
+                    fcmToken: payload.response.fcmToken,
+                    passwordChanged: true,
                     profileCompleted: payload.response.profileCompleted,
                     timestamp: Date.now(),
                     tokenRefreshedAt: Date.now(),
                 };
                 
-                await saveToStorage(STORAGE_KEYS.SESSION, sessionData);
+                await storageService.save(STORAGE_KEYS.SESSION, sessionData);
                 
-                // Also update credentials with new password
-                // Note: We don't have driverNo in the response, so we keep existing credentials
-                const existingCreds = await getFromStorage(STORAGE_KEYS.CREDENTIALS);
+                const existingCreds = await storageService.get(STORAGE_KEYS.CREDENTIALS);
                 if (existingCreds) {
-                    await saveToStorage(STORAGE_KEYS.CREDENTIALS, {
+                    await storageService.save(STORAGE_KEYS.CREDENTIALS, {
                         ...existingCreds,
-                        password: payload.newPassword, // 🆕 New password
+                        password: payload.newPassword,
                     });
                 }
                 
@@ -494,7 +463,7 @@ export const authService = {
     },
 
     /**
-     * ✅ INITIALIZATION: At startup
+     * Initialize auth
      */
     async initializeAuth(): Promise<boolean> {
         try {
@@ -515,18 +484,18 @@ export const authService = {
     },
 
     /**
-     * 🆕 FORGOT PASSWORD
+     * Forgot password
      */
-    async forgotPassword(driverNo: string): Promise<void> {
+    async forgotPassword(email: string): Promise<void> {
         try {
-            console.log('🔑 Forgot password attempt...', driverNo);
+            console.log('🔑 Forgot password attempt...', email);
 
             const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ driverNo }),
+                body: JSON.stringify({ email }),
             });
 
             if (!response.ok) {
@@ -543,11 +512,11 @@ export const authService = {
     },
 
     /**
-     * 🆕 REFRESH TOKEN: Renew access token
+     * Refresh access token
      */
     async refreshAccessToken(): Promise<boolean> {
         try {
-            const sessionData = await getFromStorage(STORAGE_KEYS.SESSION);
+            const sessionData = await storageService.get(STORAGE_KEYS.SESSION);
 
             if (!sessionData || !sessionData.refreshToken) {
                 console.log('❌ No refresh token available');
@@ -570,25 +539,23 @@ export const authService = {
                 const errorData = await response.json().catch(() => ({}));
                 console.log('❌ Error refreshing token:', errorData.message);
                 
-                // 🆕 If refresh token is invalid (401/403), logout and notify
                 if (response.status === 401 || response.status === 403) {
                     console.log('🚫 Refresh token expired (401/403), logging out...');
                     await this.logout();
-                    this.notifySessionExpired(); // 🆕 Notify the app
+                    this.notifySessionExpired();
                 }
                 return false;
             }
 
             const data: { accessToken: string } = await response.json();
 
-            // Update session with new access token
             const updatedSession: UserAuthSession = {
                 ...sessionData,
                 accessToken: data.accessToken,
-                tokenRefreshedAt: Date.now(), // 🆕 Update refresh date
+                tokenRefreshedAt: Date.now(),
             };
 
-            await saveToStorage(STORAGE_KEYS.SESSION, updatedSession);
+            await storageService.save(STORAGE_KEYS.SESSION, updatedSession);
 
             console.log('✅ Token refreshed successfully');
             return true;
@@ -600,11 +567,11 @@ export const authService = {
     },
 
     /**
-     * 🆕 CHECK: Token expired or close to expiration
+     * Check if token is expired
      */
     async isTokenExpired(): Promise<boolean> {
         try {
-            const sessionData = await getFromStorage(STORAGE_KEYS.SESSION);
+            const sessionData = await storageService.get(STORAGE_KEYS.SESSION);
 
             if (!sessionData || !sessionData.tokenRefreshedAt) {
                 return true;
@@ -613,7 +580,6 @@ export const authService = {
             const currentTime = Date.now();
             const tokenAge = currentTime - sessionData.tokenRefreshedAt;
 
-            // Token expired if more than 55 minutes (to leave a margin)
             return tokenAge > ACCESS_TOKEN_EXPIRATION;
 
         } catch (error) {
@@ -623,19 +589,16 @@ export const authService = {
     },
 
     /**
-     * 🆕 VALIDATION: Check and refresh token if necessary
-     * CALL BEFORE EVERY API REQUEST
+     * Ensure valid token - check and refresh if necessary
      */
     async ensureValidToken(): Promise<boolean> {
         try {
-            // Check if user is authenticated
             const isAuth = await this.isAuthenticated();
             if (!isAuth) {
                 console.log('⚠️ User not authenticated');
                 return false;
             }
 
-            // Check if token is expired
             const isExpired = await this.isTokenExpired();
 
             if (isExpired) {

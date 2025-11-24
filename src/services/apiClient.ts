@@ -2,7 +2,7 @@
 import { authService } from './authService';
 
 // API Configuration
-export const API_BASE_URL = 'http://192.168.1.19:3000/api/v1';
+export const API_BASE_URL = 'http://192.168.1.17:3000/api/v1';
 
 interface ApiRequestOptions extends RequestInit {
     skipAuth?: boolean; // For public endpoints (login, register, etc.)
@@ -123,6 +123,12 @@ export const apiClient = {
                     await authService.logout();
                     authService.notifySessionExpired(); // 🆕 Notify the app
                     throw new Error('Session expired, please log in again');
+                }
+
+                // 🆕 If 404 and it's a "No job assigned" message, don't log as error
+                if (response.status === 404 && errorData.message?.includes('No job assigned')) {
+                    console.log('ℹ️ No job assigned to driver (404) - This is normal');
+                    throw new Error(errorData.message || `Error ${response.status}`);
                 }
 
                 throw new Error(errorData.message || `Error ${response.status}`);

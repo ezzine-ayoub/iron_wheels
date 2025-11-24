@@ -22,9 +22,9 @@ import ConfirmationModal from '../components/ConfirmationModal';
 import NetworkIndicator from '../components/NetworkIndicator';
 import OfflineWarningModal from '../components/OfflineWarningModal';
 import SyncBar from '../components/SyncBar';
-import {offlineActionsService} from '../services/offlineActionsService';
-import {jobStorageService} from '../services/jobStorageService';
+import {syncService, storageService, AppEvents} from '../services';
 import { useAutoSync } from '../hooks/useAutoSync';
+import { useAppEvents } from '../hooks/useAppEvent';
 
 interface HomeScreenProps {
     onLogout?: () => void;
@@ -52,6 +52,42 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
     const [pendingActionsCount, setPendingActionsCount] = useState(0);
     const [isSyncing, setIsSyncing] = useState(false);
     const [isAutoSyncing, setIsAutoSyncing] = useState(false);
+
+    // 🆕 Listen to Firebase notification events for real-time updates
+    useAppEvents({
+        [AppEvents.JOB_CREATED]: (data) => {
+            console.log('📢 Job created event received:', data);
+            if (data.job) {
+                // Replace entire job object
+                console.log('🔄 Replacing job with new data:', data.job);
+                setJob(data.job);
+                const step = determineCurrentStep(data.job);
+                setCurrentStep(step);
+                console.log('📍 New step:', step);
+            } else {
+                fetchJob(); // Fallback: fetch from SQLite
+            }
+        },
+        [AppEvents.JOB_UPDATED]: (data) => {
+            console.log('📢 Job updated event received:', data);
+            if (data.job) {
+                // Replace entire job object
+                console.log('🔄 Replacing job with updated data:', data.job);
+                setJob(data.job);
+                const step = determineCurrentStep(data.job);
+                setCurrentStep(step);
+                console.log('📍 Updated step:', step);
+            } else {
+                fetchJob(); // Fallback: fetch from SQLite
+            }
+        },
+        [AppEvents.JOB_DELETED]: (data) => {
+            console.log('📢 Job deleted event received:', data);
+            console.log('🗑️ Clearing job from UI');
+            setJob(null);
+            setCurrentStep(null);
+        },
+    });
 
     useEffect(() => {
         const initialize = async () => {
@@ -84,12 +120,12 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
     }, [isConnected]); // Add isConnected as dependency
 
     const initializeOfflineService = async () => {
-        await offlineActionsService.init();
-        await jobStorageService.init();
+        await syncService.init();
+        await storageService.initDatabase();
     };
 
     const checkPendingActions = async () => {
-        const count = await offlineActionsService.getPendingActionsCount();
+        const count = await syncService.getPendingActionsCount();
         setPendingActionsCount(count);
     };
 
@@ -126,7 +162,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
                     setJob(response);
                     
                     // Save to local storage
-                    await jobStorageService.saveJob(response);
+                    await storageService.saveJob(response);
 
                     // Determine current step based on API fields
                     const step = determineCurrentStep(response);
@@ -135,7 +171,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
                 } else {
                     console.log('ℹ️ No job available from API');
                     // Try to get from local storage
-                    const localJob = await jobStorageService.getJob();
+                    const localJob = await storageService.getJob();
                     if (localJob && !localJob.isFinished) {
                         console.log('💾 Using local job:', localJob);
                         setJob(localJob);
@@ -147,10 +183,18 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
                     }
                 }
             } catch (apiError: any) {
+                // ✅ Check if it's the normal "No job assigned" case
+                if (apiError.message?.includes('No job assigned')) {
+                    console.log('ℹ️ No job assigned to driver - normal case');
+                    setJob(null);
+                    setCurrentStep(null);
+                    return; // Exit cleanly without throwing
+                }
+                
                 console.log('❌ API Error, trying local storage:', apiError.message);
                 
                 // If API fails, try local storage
-                const localJob = await jobStorageService.getJob();
+                const localJob = await storageService.getJob();
                 if (localJob && !localJob.isFinished) {
                     console.log('💾 Using local job (API failed):', localJob);
                     setJob(localJob);
@@ -161,6 +205,15 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
                 }
             }
         } catch (error: any) {
+            // ✅ Check if it's the normal "No job assigned" case
+            if (error.message?.includes('No job assigned')) {
+                console.log('ℹ️ No job available for driver (normal state)');
+                setJob(null);
+                setCurrentStep(null);
+                // Don't show any alert for this normal case
+                return;
+            }
+            
             console.log('❌ Error fetching job:', error);
 
             if (error.message?.includes('404') || error.message?.includes('not found')) {
@@ -169,7 +222,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
                 setCurrentStep(null);
             } else if (!isConnected) {
                 // If offline, try to load from local storage
-                const localJob = await jobStorageService.getJob();
+                const localJob = await storageService.getJob();
                 if (localJob && !localJob.isFinished) {
                     console.log('💾 Using cached job (offline):', localJob);
                     setJob(localJob);
@@ -251,7 +304,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
             
             if (!isConnected) {
                 // Update job locally
-                const updatedJob = await jobStorageService.updateReceiveStatus(job.id);
+                const updatedJob = await storageService.updateReceiveStatus(job.id);
                 if (updatedJob) {
                     setJob(updatedJob);
                     const step = determineCurrentStep(updatedJob);
@@ -259,7 +312,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
                 }
                 
                 // Save to offline queue
-                await offlineActionsService.addPendingAction({
+                // @ts-ignore
+                await syncService.addPendingAction({
                     jobId: job.id,
                     actionType: 'receive',
                     timestamp: new Date().toISOString(),
@@ -275,7 +329,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
             setJob(updatedJob);
             
             // Save to local storage
-            await jobStorageService.saveJob(updatedJob);
+            await storageService.saveJob(updatedJob);
             
             const step = determineCurrentStep(updatedJob);
             setCurrentStep(step);
@@ -317,7 +371,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
             
             if (!isConnected) {
                 // Update job locally
-                const updatedJob = await jobStorageService.updateStartStatus(job.id);
+                const updatedJob = await storageService.updateStartStatus(job.id);
                 if (updatedJob) {
                     setJob(updatedJob);
                     const step = determineCurrentStep(updatedJob);
@@ -340,7 +394,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
             setJob(updatedJob);
             
             // Save to local storage
-            await jobStorageService.saveJob(updatedJob);
+            await storageService.saveJob(updatedJob);
             
             const step = determineCurrentStep(updatedJob);
             setCurrentStep(step);
@@ -416,7 +470,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
             
             if (!isConnected) {
                 // Update job locally
-                const updatedJob = await jobStorageService.updateSleepStatus(job.id, country);
+                const updatedJob = await storageService.updateSleepStatus(job.id, country);
                 if (updatedJob) {
                     setJob(updatedJob);
                     const step = determineCurrentStep(updatedJob);
@@ -440,7 +494,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
             setJob(updatedJob);
             
             // Save to local storage
-            await jobStorageService.saveJob(updatedJob);
+            await storageService.saveJob(updatedJob);
             
             const step = determineCurrentStep(updatedJob);
             setCurrentStep(step);
@@ -482,7 +536,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
             
             if (!isConnected) {
                 // Update job locally
-                const updatedJob = await jobStorageService.updateFinishStatus(job.id);
+                const updatedJob = await storageService.updateFinishStatus(job.id);
                 if (updatedJob) {
                     setJob(updatedJob);
                     const step = determineCurrentStep(updatedJob);
@@ -511,7 +565,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
             console.log('🔄 Finished job response:', response);
             
             // Delete local job
-            await jobStorageService.deleteJobById(job.id);
+            await storageService.deleteJobById(job.id);
             
             setMessage(true)
             setTimeout(() => {
@@ -564,7 +618,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
 
     // Auto-sync when internet comes back
     const handleAutoSync = async () => {
-        const count = await offlineActionsService.getPendingActionsCount();
+        const count = await syncService.getPendingActionsCount();
         
         if (count === 0) {
             console.log('✅ No pending actions to sync');
@@ -575,7 +629,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
         setIsAutoSyncing(true);
         
         try {
-            const pendingActions = await offlineActionsService.getPendingActions();
+            const pendingActions = await syncService.getPendingActions();
             
             let successCount = 0;
             let failCount = 0;
@@ -600,7 +654,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
                             break;
                     }
                     
-                    await offlineActionsService.markAsSynced(action.id!);
+                    await syncService.markAsSynced(action.id!);
                     successCount++;
                     console.log(`✅ Auto-synced ${action.actionType} successfully`);
                 } catch (error: any) {
@@ -610,7 +664,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
             }
             
             // Clean up synced actions
-            await offlineActionsService.clearSyncedActions();
+            await syncService.clearSyncedActions();
             await checkPendingActions();
             
             // Refresh job after sync
@@ -649,7 +703,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
         setIsSyncing(true);
         
         try {
-            const pendingActions = await offlineActionsService.getPendingActions();
+            const pendingActions = await syncService.getPendingActions();
             
             if (pendingActions.length === 0) {
                 Alert.alert('No Actions', 'There are no pending actions to sync.');
@@ -681,7 +735,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
                             break;
                     }
                     
-                    await offlineActionsService.markAsSynced(action.id!);
+                    await syncService.markAsSynced(action.id!);
                     successCount++;
                     console.log(`✅ Synced ${action.actionType} successfully`);
                 } catch (error: any) {
@@ -691,7 +745,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
             }
             
             // Clean up synced actions
-            await offlineActionsService.clearSyncedActions();
+            await syncService.clearSyncedActions();
             await checkPendingActions();
             
             // Refresh job after sync to get latest from server
@@ -865,12 +919,27 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
                                     contentContainerStyle={styles.descriptionContent}
                                     showsVerticalScrollIndicator={true}
                                 >
-                                    <Text style={styles.descriptionText}>{job.description}</Text>
+                                    {currentStep === 'receive' ? (
+                                        // Afficher uniquement les villes pour "Receive Job"
+                                        <View style={styles.citiesContainer}>
+                                            <View style={styles.cityRow}>
+                                                <Text style={styles.cityLabel}>From:</Text>
+                                                <Text style={styles.cityValue}>{job.startCountry}</Text>
+                                            </View>
+                                            <View style={styles.cityRow}>
+                                                <Text style={styles.cityLabel}>To:</Text>
+                                                <Text style={styles.cityValue}>{job.deliveryCountry}</Text>
+                                            </View>
+                                        </View>
+                                    ) : (
+                                        // Afficher la description pour les autres statuts
+                                        <Text style={styles.descriptionText}>{job.description}</Text>
+                                    )}
                                 </ScrollView>
                             </View>) : message ?
                                 (
                                     <View style={styles.emptyContainer}>
-                                        <View style={styles.emptyIconContainer}>
+                                        <View style={{...styles.emptyIconContainer,backgroundColor: '#e8f5e9'}}>
                                             <Text style={styles.emptyIcon}>✓</Text>
                                         </View>
                                         <Text style={styles.emptyTitle}>All Done!</Text>
@@ -1265,6 +1334,7 @@ const styles = StyleSheet.create({
     },
     emptyIcon: {
         fontSize: 40,
+        color:"green"
     },
     emptyTitle: {
         fontSize: 24,
@@ -1371,6 +1441,31 @@ const styles = StyleSheet.create({
         color: colors.white,
         fontSize: 18,
         fontWeight: '600',
+    },
+    citiesContainer: {
+        paddingVertical: 20,
+    },
+    cityRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 20,
+        backgroundColor: '#f8f9fa',
+        padding: 16,
+        borderRadius: 12,
+        borderLeftWidth: 4,
+        borderLeftColor: colors.primary,
+    },
+    cityLabel: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: colors.primary,
+        width: 70,
+    },
+    cityValue: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: colors.text,
+        flex: 1,
     },
 });
 

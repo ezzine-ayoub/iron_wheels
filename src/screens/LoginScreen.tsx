@@ -16,6 +16,7 @@ import {
 import {colors} from './theme';
 import {authService} from '../services/authService';
 import ChangePasswordModal from '../components/ChangePasswordModal';
+import FirebaseNotificationService from '../services/FirebaseNotificationService';
 
 import ForgotPasswordModal from '../components/ForgotPasswordModal';
 
@@ -57,6 +58,16 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
 
             // Password already changed, normal redirection
             console.log('✅ passwordChanged = true, redirecting to Home');
+            
+            // ✅ Sync Firebase token to server after successful login
+            try {
+                await FirebaseNotificationService.syncTokenToServer();
+                console.log('✅ Firebase token synced after login');
+            } catch (error) {
+                console.warn('⚠️ Could not sync Firebase token after login:', error);
+                // Don't block login if token sync fails
+            }
+            
             onLoginSuccess();
         } catch (error: any) {
             const errorMsg = error.message || 'Incorrect credentials. Please try again.';

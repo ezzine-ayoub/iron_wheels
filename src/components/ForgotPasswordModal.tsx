@@ -21,12 +21,21 @@ const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
   visible,
   onClose,
 }) => {
-  const [driverNo, setDriverNo] = useState('');
+  const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleResetPassword = async () => {
-    if (!driverNo) {
-      Alert.alert('Missing Information', 'Please enter your driver number', [
+    if (!email) {
+      Alert.alert('Missing Information', 'Please enter your email address', [
+        {text: 'OK'},
+      ]);
+      return;
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address', [
         {text: 'OK'},
       ]);
       return;
@@ -35,12 +44,13 @@ const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
     setLoading(true);
 
     try {
-      await authService.forgotPassword(driverNo);
+      await authService.forgotPassword(email);
       Alert.alert(
         'Success',
-        'A password reset link has been sent to your registered contact.',
+        'A password reset link has been sent to your email address.',
         [{text: 'OK', onPress: onClose}],
       );
+      setEmail(''); // Clear the email field after success
     } catch (error: any) {
       const errorMsg =
         error.message || 'An error occurred. Please try again.';
@@ -55,14 +65,15 @@ const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
       <View style={styles.modalContainer}>
         <View style={styles.modalContent}>
           <Text style={styles.title}>Forgot Password</Text>
+          <Text style={styles.subtitle}>Enter your email address to receive a password reset link</Text>
           <TextInput
             style={styles.input}
-            placeholder="Enter your driver number"
-            value={driverNo}
-            onChangeText={setDriverNo}
+            placeholder="Enter your email address"
+            value={email}
+            onChangeText={setEmail}
             autoCapitalize="none"
             autoCorrect={false}
-            keyboardType="default"
+            keyboardType="email-address"
             placeholderTextColor={colors.textSecondary}
           />
           <TouchableOpacity
@@ -101,8 +112,14 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 20,
+    marginBottom: 8,
     color: colors.text,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: 20,
+    textAlign: 'center',
   },
   input: {
     width: '100%',

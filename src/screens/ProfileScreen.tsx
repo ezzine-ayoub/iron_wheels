@@ -18,8 +18,7 @@ import OfflineWarningModal from '../components/OfflineWarningModal';
 import {apiClient} from '../services/apiClient';
 import NetworkIndicator from '../components/NetworkIndicator';
 import SyncBar from '../components/SyncBar';
-import {offlineActionsService} from '../services/offlineActionsService';
-import {jobStorageService} from '../services/jobStorageService';
+import {syncService, storageService} from '../services';
 
 interface ProfileScreenProps {
     onLogout?: () => void;
@@ -75,7 +74,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({onLogout, onNavigateHome})
     }, []);
 
     const checkPendingActions = async () => {
-        const count = await offlineActionsService.getPendingActionsCount();
+        const count = await syncService.getPendingActionsCount();
         setPendingActionsCount(count);
     };
 
@@ -123,7 +122,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({onLogout, onNavigateHome})
 
     const handleLogout = async () => {
         // Check if there are pending actions
-        const pendingCount = await offlineActionsService.getPendingActionsCount();
+        const pendingCount = await syncService.getPendingActionsCount();
 
         if (pendingCount > 0) {
             Alert.alert(
@@ -168,11 +167,11 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({onLogout, onNavigateHome})
     const performLogout = async () => {
         try {
             // Clear all pending actions
-            await offlineActionsService.clearAll();
+            await syncService.clearAll();
             console.log('✅ Pending actions cleared');
 
             // Clear cached jobs
-            await jobStorageService.deleteJob();
+            await storageService.deleteJob();
             console.log('✅ Cached jobs cleared');
 
             // Nettoyer la session SQLite
@@ -219,6 +218,16 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({onLogout, onNavigateHome})
                 return;
             }
 
+            // ✅ Générer le FCM token
+            const FirebaseNotificationService = require('../services/FirebaseNotificationService').default;
+            let fcmToken = null;
+            try {
+                fcmToken = await FirebaseNotificationService.getFCMToken();
+                console.log('📱 FCM Token retrieved for profile update:', fcmToken);
+            } catch (error) {
+                console.warn('⚠️ Could not retrieve FCM token, continuing without it:', error);
+            }
+
             if (!isConnected) {
                 // Update local state only
                 setUser(prevUser => ({
@@ -227,7 +236,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({onLogout, onNavigateHome})
                 }));
 
                 // Save to offline queue
-                await offlineActionsService.addPendingAction({
+                await syncService.addPendingAction({
                     jobId: 0, // Special ID for profile updates
                     actionType: 'start', // We'll reuse this type
                     actionData: JSON.stringify({
@@ -235,6 +244,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({onLogout, onNavigateHome})
                         userId: user.id,
                         driverNo: user.driverNo,
                         employed: user.employed,
+                        fcmToken: fcmToken,
                         data: updatedUser,
                     }),
                     timestamp: new Date().toISOString(),
@@ -252,6 +262,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({onLogout, onNavigateHome})
                 phone: updatedUser.phone,
                 personalNo: updatedUser.personalNo,
                 employed: user.employed,
+                fcmToken: fcmToken,
             });
 
             // Update local state
@@ -288,7 +299,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({onLogout, onNavigateHome})
         setIsSyncing(true);
 
         try {
-            const pendingActions = await offlineActionsService.getPendingActions();
+            const pendingActions = await syncService.getPendingActions();
 
             if (pendingActions.length === 0) {
                 Alert.alert('No Actions', 'There are no pending actions to sync.');
@@ -317,6 +328,19 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({onLogout, onNavigateHome})
                                 continue;
                             }
 
+                            // ✅ Générer un nouveau FCM token lors de la synchronisation
+                            const FirebaseNotificationService = require('../services/FirebaseNotificationService').default;
+                            let fcmToken = actionData.fcmToken; // Utiliser l'ancien token par défaut
+                            try {
+                                const newToken = await FirebaseNotificationService.getFCMToken();
+                                if (newToken) {
+                                    fcmToken = newToken;
+                                    console.log('📱 New FCM Token retrieved for sync:', fcmToken);
+                                }
+                            } catch (error) {
+                                console.warn('⚠️ Could not retrieve new FCM token during sync, using stored token:', error);
+                            }
+
                             // ✅ apiClient.put gère automatiquement l'accessToken via ensureValidToken()
                             await apiClient.put(`/users/complete-profile/${actionData.driverNo}`, {
                                 email: actionData.data.email,
@@ -324,8 +348,9 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({onLogout, onNavigateHome})
                                 phone: actionData.data.phone,
                                 personalNo: actionData.data.personalNo,
                                 employed: actionData.employed,
+                                fcmToken: fcmToken,
                             });
-                            await offlineActionsService.markAsSynced(action.id!);
+                            await syncService.markAsSynced(action.id!);
                             successCount++;
                             console.log('✅ Profile update synced successfully');
                             continue;
@@ -348,7 +373,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({onLogout, onNavigateHome})
                             break;
                     }
 
-                    await offlineActionsService.markAsSynced(action.id!);
+                    await syncService.markAsSynced(action.id!);
                     successCount++;
                     console.log(`✅ Synced ${action.actionType} successfully`);
                 } catch (error: any) {
@@ -358,7 +383,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({onLogout, onNavigateHome})
             }
 
             // Clean up synced actions
-            await offlineActionsService.clearSyncedActions();
+            await syncService.clearSyncedActions();
             await checkPendingActions();
 
             // Reload user data after sync

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Alert } from 'react-native';
-import { autoSyncService } from '../services/autoSyncService';
+import { syncService } from '../services';
 
 interface UseAutoSyncOptions {
   showSuccessAlert?: boolean;
@@ -36,9 +36,9 @@ export const useAutoSync = (options: UseAutoSyncOptions = {}): UseAutoSyncReturn
     const initialize = async () => {
       if (!autoInitialize) return;
 
-      await autoSyncService.initialize();
+      await syncService.initializeAutoSync();
 
-      unsubscribe = autoSyncService.onSyncComplete((success, syncedCount, failedCount) => {
+      unsubscribe = syncService.onSyncComplete((success, syncedCount, failedCount) => {
         console.log(`🔄 Sync completed: ${syncedCount} synced, ${failedCount} failed`);
 
         refreshPendingCount();
@@ -61,12 +61,12 @@ export const useAutoSync = (options: UseAutoSyncOptions = {}): UseAutoSyncReturn
       });
 
       statusInterval = setInterval(() => {
-        const status = autoSyncService.getSyncStatus();
+        const status = syncService.getSyncStatus();
         setIsOnline(status.isOnline);
         setIsSyncing(status.isSyncing);
       }, 1000);
 
-      const status = autoSyncService.getSyncStatus();
+      const status = syncService.getSyncStatus();
       setIsOnline(status.isOnline);
       setIsSyncing(status.isSyncing);
       await refreshPendingCount();
@@ -82,7 +82,7 @@ export const useAutoSync = (options: UseAutoSyncOptions = {}): UseAutoSyncReturn
 
   const refreshPendingCount = async () => {
     try {
-      const count = await autoSyncService.getPendingCount();
+      const count = await syncService.getPendingActionsCount();
       setPendingCount(count);
     } catch (error) {
       console.error('Error getting pending count:', error);
@@ -92,7 +92,7 @@ export const useAutoSync = (options: UseAutoSyncOptions = {}): UseAutoSyncReturn
   const syncNow = async () => {
     try {
       setIsSyncing(true);
-      const result = await autoSyncService.manualSync();
+      const result = await syncService.manualSync();
       
       if (result.success > 0 && showSuccessAlert) {
         Alert.alert('Sync Complete', `Successfully synced ${result.success} actions`);

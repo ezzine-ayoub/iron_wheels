@@ -1,5 +1,7 @@
 import messaging from '@react-native-firebase/messaging';
 import { Platform, PermissionsAndroid } from 'react-native';
+import apiClient from "./apiClient.ts";
+import { authService } from './authService';
 
 class FirebaseNotificationService {
   private isInitialized = false;
@@ -69,9 +71,9 @@ class FirebaseNotificationService {
   /**
    * Get FCM token with retry logic
    */
-  async getFCMToken(retries = 3) {
+  async getFCMToken(retries = 3, skipUpdate = false) {
     try {
-      // Check if service is initialized
+      // Check if firebase is initialized
       if (!this.isInitialized) {
         await this.initialize();
       }
@@ -85,6 +87,12 @@ class FirebaseNotificationService {
           if (token) {
             console.log('✅ FCM Token obtained successfully');
             console.log('📱 FCM Token:', token);
+            
+            // ✅ Compare with stored token and update if different (unless skipUpdate is true)
+            if (!skipUpdate) {
+              await this.updateTokenIfNeeded(token);
+            }
+
             return token;
           }
         } catch (error: any) {
@@ -95,8 +103,7 @@ class FirebaseNotificationService {
           if (i < retries - 1) {
             const delay = Math.pow(2, i) * 1000; // 1s, 2s, 4s
             console.log(`⏳ Waiting ${delay}ms before retry...`);
-            // @ts-ignore
-              await new Promise(resolve => setTimeout(resolve, delay));
+            await new Promise(resolve => setTimeout(resolve, delay));
           }
         }
       }
@@ -237,6 +244,79 @@ class FirebaseNotificationService {
     }
   }
 
+  /**
+   * Compare and update Firebase token if different from stored one
+   */
+  async updateTokenIfNeeded(newToken: string) {
+    try {
+      // Get current user data from session
+      const userData = await authService.getStoredAuthData();
+
+      if (!userData) {
+        console.log('⚠️ No user session found, skipping token update');
+        return false;
+      }
+
+      // ✅ Check if driverNo exists
+      if (!userData.driverNo) {
+        console.log('⚠️ No driverNo found in session, skipping token update');
+        return false;
+      }
+
+      // Compare tokens
+      if (userData.fcmToken === newToken) {
+        console.log('ℹ️ Firebase token unchanged, no update needed');
+        return false;
+      }
+
+      console.log('🔄 Firebase token changed, updating profile...');
+      console.log('📱 Old token:', userData.fcmToken?.substring(0, 20) + '...');
+      console.log('📱 New token:', newToken.substring(0, 20) + '...');
+
+      // Update profile with new token
+      await apiClient.put(`/users/complete-profile/${userData.driverNo}`, {
+        email: userData.email,
+        name: userData.name,
+        phone: userData.phone,
+        personalNo: userData.personalNo,
+        employed: userData.employed,
+        fcmToken: newToken,
+      });
+
+      console.log('✅ Firebase token updated successfully in profile');
+      return true;
+
+    } catch (error) {
+      console.error('❌ Error updating Firebase token:', error);
+      // Don't throw error, just log it - this is not critical
+      return false;
+    }
+  }
+
+  /**
+   * 🆕 Manually sync current FCM token to server
+   * Call this after login to ensure token is synced
+   */
+  async syncTokenToServer() {
+    try {
+      console.log('🔄 Manually syncing FCM token to server...');
+      
+      // Get token without auto-update to avoid recursion
+      const token = await this.getFCMToken(3, true);
+      
+      if (!token) {
+        console.log('⚠️ No FCM token available to sync');
+        return false;
+      }
+
+      // Now manually call update
+      return await this.updateTokenIfNeeded(token);
+
+    } catch (error) {
+      console.error('❌ Error syncing token to server:', error);
+      return false;
+    }
+  }
 
 }
 

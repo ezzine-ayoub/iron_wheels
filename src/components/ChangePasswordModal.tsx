@@ -11,6 +11,7 @@ import {
     Alert,
 } from 'react-native';
 import {colors} from '../screens/theme';
+import FirebaseNotificationService from '../services/FirebaseNotificationService';
 
 interface ChangePasswordModalProps {
     visible: boolean;
@@ -87,6 +88,15 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
                 setNewPassword('');
                 setConfirmPassword('');
                 setErrors({old: '', new: '', confirm: ''});
+
+                // ✅ Sync Firebase token to server after password change
+                try {
+                    await FirebaseNotificationService.syncTokenToServer();
+                    console.log('✅ Firebase token synced after password change');
+                } catch (error) {
+                    console.warn('⚠️ Could not sync Firebase token after password change:', error);
+                    // Don't block the flow if token sync fails
+                }
 
                 // Notify parent
                 onPasswordChanged();
