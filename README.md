@@ -6,7 +6,7 @@ Service de notifications Firebase professionnel et complet pour Node.js avec sup
 
 ```
 iron_wheels/
-├── send-notification.js      # Classe NotificationService (principale)
+├── send-notification.ts      # Classe NotificationService (principale)
 ├── config.js                 # Configuration centralisée
 ├── examples.js               # Exemples d'utilisation
 ├── keyFirebase.json          # Clé de service Firebase (à protéger!)
@@ -60,7 +60,7 @@ npm install firebase-admin
 ```javascript
 const NotificationService = require('./send-notification');
 
-// Initialiser le service
+// Initialiser le firebase
 const service = new NotificationService("./keyFirebase.json");
 service.initialize();
 
@@ -110,11 +110,11 @@ const result = await service.sendNotification(
 const service = new NotificationService("./keyFirebase.json");
 service.initialize();
 
-await service.sendNotification(
-    token,
-    { title: "Bienvenue!", body: "Merci de nous rejoindre." },
-    { type: "welcome", screen: "Home", id: "w1" }
-);
+await service.sendNotification(token, {title: "Bienvenue!", body: "Merci de nous rejoindre."}, {
+    type: "welcome",
+    screen: "Home",
+    id: "w1"
+});
 ```
 
 ### 2. Notifications Multiples
@@ -156,17 +156,17 @@ await service.deleteNotificationById("promo-001");
 async function sendWithRetry(token, notification, data, maxRetries = 3) {
     for (let i = 1; i <= maxRetries; i++) {
         const result = await service.sendNotification(token, notification, data);
-        
+
         if (result.success) {
             return result;
         }
-        
+
         if (i < maxRetries) {
             await new Promise(resolve => setTimeout(resolve, 2000));
         }
     }
-    
-    return { success: false, error: { message: "Max retries exceeded" } };
+
+    return {success: false, error: {message: "Max retries exceeded"}};
 }
 ```
 
@@ -175,8 +175,8 @@ async function sendWithRetry(token, notification, data, maxRetries = 3) {
 ### Test Basique
 
 ```bash
-# Modifier le token dans send-notification.js (ligne ~312)
-node send-notification.js
+# Modifier le token dans send-notification.ts (ligne ~312)
+node send-notification.ts
 ```
 
 ### Exemples Interactifs

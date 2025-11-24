@@ -1,4 +1,4 @@
-// config.js - Configuration centralisée du service de notifications
+// config.js - Configuration centralisée du firebase de notifications
 
 module.exports = {
     // Chemin vers le fichier de clé Firebase

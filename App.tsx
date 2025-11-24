@@ -9,8 +9,29 @@ import React, {useEffect} from 'react';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {Platform} from 'react-native';
 import AppNavigator from './src/navigation/AppNavigator';
-import {autoSyncService} from './src/services/autoSyncService';
+import {syncService, storageService} from './src/services';
 import FirebaseNotificationService from './src/services/FirebaseNotificationService';
+
+/**
+ * Convert job data to proper format for SQLite
+ */
+function formatJobForStorage(jobData: any) {
+    return {
+        id: jobData.id,
+        assigneeId: jobData.assigneeId || null,
+        description: jobData.description || '',
+        sleepSweden: parseInt(jobData.sleepSweden) || 0,
+        sleepNorway: parseInt(jobData.sleepNorway) || 0,
+        startCountry: jobData.startCountry || null,
+        deliveryCountry: jobData.deliveryCountry || null,
+        startDatetime: jobData.startDatetime === 'null' ? null : jobData.startDatetime,
+        endDatetime: jobData.endDatetime === 'null' ? null : jobData.endDatetime,
+        isReceived: jobData.isReceived === 'true' || jobData.isReceived === true,
+        isFinished: jobData.isFinished === 'true' || jobData.isFinished === true,
+        createdAt: jobData.createdAt || new Date().toISOString(),
+        updatedAt: jobData.updatedAt || new Date().toISOString(),
+    };
+}
 
 const App = () => {
     useEffect(() => {
@@ -18,8 +39,8 @@ const App = () => {
         const initializeServices = async () => {
             try {
                 // Initialize auto-sync
-                await autoSyncService.initialize();
-                console.log('✅ Auto-sync service initialized');
+                await syncService.initializeAutoSync();
+                console.log('✅ Auto-sync firebase initialized');
                 
                 // Initialize Firebase notifications with delay on Android
                 if (Platform.OS === 'android') {
@@ -32,19 +53,55 @@ const App = () => {
                 const initialized = await FirebaseNotificationService.initialize();
                 
                 if (initialized) {
-                    // Try to get FCM token with retry logic
-                    const token = await FirebaseNotificationService.getFCMToken();
+                    // ✅ Get FCM token but skip auto-update (will be done after login)
+                    const token = await FirebaseNotificationService.getFCMToken(3, true);
                     
                     if (token) {
                         console.log('✅ Firebase notifications initialized successfully');
-                        // You can send this token to your backend here if needed
-                        // await sendTokenToBackend(token);
+                        console.log('ℹ️ Token will be synced to server after login');
                     } else {
                         console.warn('⚠️ Could not obtain FCM token, notifications may not work');
                     }
                 } else {
                     console.warn('⚠️ Firebase initialization failed, notifications will not work');
                 }
+                
+                // 🆕 Setup foreground notification handler
+                const unsubscribeForeground = FirebaseNotificationService.onMessageReceived(async (remoteMessage) => {
+                    console.log('🔔 Foreground notification received');
+                    console.log('📦 Notification data:', JSON.stringify(remoteMessage.data));
+                    
+                    // Handle job updates in foreground
+                    if (remoteMessage.data && remoteMessage.data.id) {
+                        try {
+                            // Les données arrivent déjà comme un objet plat avec tous les champs
+                            const jobData = remoteMessage.data;
+                            
+                            console.log('🔍 Job ID detected:', jobData.id);
+                            
+                            await storageService.initDatabase();
+                            
+                            const parsedJob = formatJobForStorage(jobData);
+                            
+                            console.log('💾 Saving job to SQLite:', parsedJob.id);
+                            console.log('📝 Job details:', JSON.stringify(parsedJob, null, 2));
+                            
+                            // Save to SQLite (will emit event automatically)
+                            await storageService.saveJob(parsedJob, true);
+                            console.log('✅ Job saved from foreground notification:', parsedJob.id);
+                        } catch (error) {
+                            console.error('❌ Error handling foreground job update:', error);
+                        }
+                    } else {
+                        console.warn('⚠️ Notification data missing job ID');
+                    }
+                });
+                
+                return () => {
+                    if (unsubscribeForeground) {
+                        unsubscribeForeground();
+                    }
+                };
             } catch (error) {
                 console.error('❌ Error initializing services:', error);
             }
@@ -54,7 +111,7 @@ const App = () => {
 
         // Cleanup when app closes
         return () => {
-            autoSyncService.destroy();
+            syncService.destroy();
         };
     }, []);
 

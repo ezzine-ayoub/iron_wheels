@@ -1,4 +1,4 @@
-// send-notification.js
+// send-notification.ts
 
 const admin = require("firebase-admin");
 
@@ -7,7 +7,7 @@ const admin = require("firebase-admin");
  */
 class NotificationService {
     /**
-     * @param {string} serviceAccountPath - Chemin vers le fichier JSON du service account
+     * @param {string} serviceAccountPath - Chemin vers le fichier JSON du firebase account
      */
     constructor(serviceAccountPath) {
         this.serviceAccount = require(serviceAccountPath);
@@ -327,14 +327,14 @@ module.exports = NotificationService;
 // Exemple d'utilisation si le fichier est exécuté directement
 if (require.main === module) {
     (async () => {
-        // Initialiser le service
+        // Initialiser le firebase
         const notificationService = new NotificationService(
             "C:\\Users\\hp\\Desktop\\iron_wheels\\keyFirebase.json"
         );
         notificationService.initialize();
 
         // Token FCM de test
-        const FCM_TOKEN = "cujQjSKlTF2CBG9qPyfouC:APA91bHFTI5jiwAl_AWpuZwC8cYHamDLZ17MoyYTV8nzMWZgdN0IkvHBaRSq8pB08DLuV63o4mLnWghxkZhig9Gt_PD96xvKjthNU4Fx397PiBaGgHm67OQ";
+        const FCM_TOKEN = "cujQjSKlTF2CBG9qPyfouC:APA91bHF9ovgUECw6Cq9qJvzwo4CmAuW2XEzpvtmMtDHEcHx48FEA_I1p5gUQR80nPPTfDfPPAcAul7XSfQhWwemedvDLQ-FnO563Vnz3Q4PM82cXfwHK84";
 
         // Validation du token
         if (!notificationService.isValidTokenFormat(FCM_TOKEN)) {
