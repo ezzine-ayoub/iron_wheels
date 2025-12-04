@@ -2,7 +2,7 @@
 import { authService } from './authService';
 
 // API Configuration
-export const API_BASE_URL = 'http://192.168.1.17:3000/api/v1';
+export const API_BASE_URL = 'https://api.ironwheelsdriver.com/api/v1';
 
 interface ApiRequestOptions extends RequestInit {
     skipAuth?: boolean; // For public endpoints (login, register, etc.)
@@ -135,13 +135,26 @@ export const apiClient = {
             }
 
             // Check if response has content
+            const contentLength = response.headers.get('content-length');
             const contentType = response.headers.get('content-type');
+            
+            // If content-length is 0 or no content, return null
+            if (contentLength === '0' || contentLength === null) {
+                console.log('ℹ️ Empty response (content-length: 0)');
+                return null as T;
+            }
+            
             if (contentType && contentType.includes('application/json')) {
-                return await response.json();
+                const data = await response.json();
+                // Handle empty JSON responses (null, empty object, empty array)
+                if (data === null || (typeof data === 'object' && Object.keys(data).length === 0)) {
+                    return null as T;
+                }
+                return data;
             }
 
-            // If no JSON content, return empty object
-            return {} as T;
+            // If no JSON content, return null
+            return null as T;
 
         } catch (error) {
             console.log(`❌ API Error ${endpoint}:`, error);

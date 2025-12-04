@@ -5,13 +5,13 @@ import { authService } from './authService';
 
 class FirebaseNotificationService {
   private isInitialized = false;
-  
+
   /**
    * Check if Google Play Services is available
    */
   async checkPlayServices() {
     if (Platform.OS !== 'android') return true;
-    
+
     try {
       const isAvailable = await messaging().hasPermission();
       return isAvailable !== messaging.AuthorizationStatus.NOT_DETERMINED;
@@ -39,7 +39,7 @@ class FirebaseNotificationService {
         const granted = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
         );
-        
+
         if (granted === PermissionsAndroid.RESULTS.GRANTED) {
           console.log('✅ Notification permission granted');
           return true;
@@ -87,7 +87,7 @@ class FirebaseNotificationService {
           if (token) {
             console.log('✅ FCM Token obtained successfully');
             console.log('📱 FCM Token:', token);
-            
+
             // ✅ Compare with stored token and update if different (unless skipUpdate is true)
             if (!skipUpdate) {
               await this.updateTokenIfNeeded(token);
@@ -98,16 +98,17 @@ class FirebaseNotificationService {
         } catch (error: any) {
           lastError = error;
           console.warn(`⚠️ FCM token attempt ${i + 1} failed:`, error.message);
-          
+
           // Wait before retrying (exponential backoff)
           if (i < retries - 1) {
             const delay = Math.pow(2, i) * 1000; // 1s, 2s, 4s
             console.log(`⏳ Waiting ${delay}ms before retry...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
+            // @ts-ignore
+              await new Promise(resolve => setTimeout(resolve, delay));
           }
         }
       }
-      
+
       console.error('❌ Error getting FCM token after all retries:', lastError);
       return null;
     } catch (error) {
@@ -300,10 +301,10 @@ class FirebaseNotificationService {
   async syncTokenToServer() {
     try {
       console.log('🔄 Manually syncing FCM token to server...');
-      
+
       // Get token without auto-update to avoid recursion
       const token = await this.getFCMToken(3, true);
-      
+
       if (!token) {
         console.log('⚠️ No FCM token available to sync');
         return false;

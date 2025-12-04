@@ -11,7 +11,7 @@ const DB_NAME = 'iron_wheels.db';
 
 export interface PendingAction {
   id?: number;
-  jobId: number;
+  jobId: string;
   actionType: 'receive' | 'start' | 'sleep' | 'finish';
   actionData?: string;
   timestamp: string;
@@ -65,7 +65,7 @@ class SyncService {
     const query = `
       CREATE TABLE IF NOT EXISTS pending_actions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        jobId INTEGER NOT NULL,
+        jobId TEXT NOT NULL,
         actionType TEXT NOT NULL,
         actionData TEXT,
         timestamp TEXT NOT NULL,
@@ -301,8 +301,28 @@ class SyncService {
         }
 
         // Update local storage with server response
-        if (response) {
+        if (response && response.id) {
           await storageService.saveJob(response);
+        } else if (response === null || !response.id) {
+          // If API returns empty, update local storage manually
+          console.log('⚠️ API returned empty during sync, updating local job manually');
+          switch (action.actionType) {
+            case 'receive':
+              await storageService.updateReceiveStatus(action.jobId);
+              break;
+            case 'start':
+              await storageService.updateStartStatus(action.jobId);
+              break;
+            case 'sleep':
+              const sleepData = action.actionData ? JSON.parse(action.actionData) : {};
+              if (sleepData.country) {
+                await storageService.updateSleepStatus(action.jobId, sleepData.country);
+              }
+              break;
+            case 'finish':
+              await storageService.updateFinishStatus(action.jobId);
+              break;
+          }
         }
 
         // Mark as synced

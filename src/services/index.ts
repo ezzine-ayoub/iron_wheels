@@ -3,8 +3,8 @@ export { authService } from './authService';
 export { storageService } from './storageService';
 export { syncService } from './syncService';
 export { apiClient } from './apiClient';
-export { default as FirebaseNotificationService } from './FirebaseNotificationService';
 export { appEventEmitter, AppEvents } from './appEventEmitter';
+export { websocketService } from './websocketService';
 export type { AppEventType } from './appEventEmitter';
 
 // Export types

@@ -15,6 +15,7 @@ import {
 
 import {colors} from './theme';
 import {authService} from '../services/authService';
+import {websocketService} from '../services/websocketService';
 import ChangePasswordModal from '../components/ChangePasswordModal';
 import FirebaseNotificationService from '../services/FirebaseNotificationService';
 
@@ -58,6 +59,14 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
 
             // Password already changed, normal redirection
             console.log('✅ passwordChanged = true, redirecting to Home');
+            
+            // ✅ Connect WebSocket for real-time updates
+            try {
+                await websocketService.connect(result.id);
+                console.log('✅ WebSocket connected after login');
+            } catch (error) {
+                console.warn('⚠️ Could not connect WebSocket after login:', error);
+            }
             
             // ✅ Sync Firebase token to server after successful login
             try {
@@ -169,9 +178,21 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
                 visible={showPasswordModal}
                 oldPasswordChanged={password}
                 response={responseRequest}
-                onPasswordChanged={() => {
+                onPasswordChanged={async () => {
                     console.log('✅ Password changed, redirecting to Home');
                     setShowPasswordModal(false);
+                    
+                    // ✅ Connect WebSocket for real-time updates
+                    try {
+                        const user = responseRequest as any;
+                        if (user?.id) {
+                            await websocketService.connect(user.id);
+                            console.log('✅ WebSocket connected after password change');
+                        }
+                    } catch (error) {
+                        console.warn('⚠️ Could not connect WebSocket:', error);
+                    }
+                    
                     onLoginSuccess();
                 }}
             />

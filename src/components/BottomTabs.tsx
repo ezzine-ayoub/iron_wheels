@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Platform } from 'react-native';
 import { colors } from '../screens/theme';
 
 interface BottomTabsProps {
@@ -76,7 +76,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    paddingBottom: 35,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 10,
   },
   tab: {
     flex: 1,

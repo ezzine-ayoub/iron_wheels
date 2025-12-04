@@ -9,6 +9,7 @@ import {
     Text,
     TouchableOpacity,
     View,
+    Platform,
 } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import {colors} from './theme';
@@ -250,7 +251,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({onLogout, onNavigateHome})
                     timestamp: new Date().toISOString(),
                 });
 
-                Alert.alert('Saved Offline', 'Profile updated locally. Will sync when online.');
+                // Alert.alert('Saved Offline', 'Profile updated locally. Will sync when online.');
                 await checkPendingActions();
                 setEditModalVisible(false);
                 return;
@@ -426,7 +427,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({onLogout, onNavigateHome})
     const getFieldsWithValues = () => {
         return [
             {label: 'Driver No', value: user.driverNo},
-            {label: 'User ID', value: user.id},
+            // {label: 'User ID', value: user.id},
             {label: 'Email', value: user.email},
             {label: 'Phone', value: user.phone},
             {label: 'Personal Number', value: user.personalNo},
@@ -572,7 +573,7 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: 20,
-        paddingTop: 48,
+        paddingTop: Platform.OS === 'ios' ? 50 : StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 30,
         paddingBottom: 16,
         backgroundColor: colors.primary,
         borderBottomWidth: 0,

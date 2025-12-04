@@ -9,6 +9,14 @@ export enum CountryType {
   NORWAY = 'NORWAY',
 }
 
+export enum JobStatus {
+  CREATED = 'CREATED',
+  RECEIVED = 'RECEIVED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+}
+
 export interface User {
   id: string;
   email?: string;
@@ -27,17 +35,23 @@ export interface User {
 export interface Job {
   id: string;
   assigneeId: string;
+  customerId?: string | null;
   description: string;
+  status: JobStatus | string;
   sleepSweden: number;
   sleepNorway: number;
   startCountry: string;
   deliveryCountry: string;
-  startDatetime?: Date;
-  endDatetime?: Date;
+  trailerNo?: string | null;
+  trackNo?: string | null;
+  tripPath?: string | null;
+  startDatetime?: Date | string | null;
+  endDatetime?: Date | string | null;
   isReceived: boolean;
   isFinished: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+  deletedAt?: Date | string | null;
   assignee?: User;
 }
 

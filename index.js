@@ -22,6 +22,7 @@ function formatJobForStorage(jobData) {
     sleepSweden: parseInt(jobData.sleepSweden) || 0,
     sleepNorway: parseInt(jobData.sleepNorway) || 0,
     startCountry: jobData.startCountry || null,
+    tripPath: jobData.tripPath || '',
     deliveryCountry: jobData.deliveryCountry || null,
     startDatetime: jobData.startDatetime === 'null' ? null : jobData.startDatetime,
     endDatetime: jobData.endDatetime === 'null' ? null : jobData.endDatetime,
@@ -29,6 +30,7 @@ function formatJobForStorage(jobData) {
     isFinished: jobData.isFinished === 'true' || jobData.isFinished === true,
     createdAt: jobData.createdAt || new Date().toISOString(),
     updatedAt: jobData.updatedAt || new Date().toISOString(),
+    deletedAt: jobData.deletedAt || null,
   };
 }
 

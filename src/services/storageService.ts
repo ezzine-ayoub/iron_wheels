@@ -72,19 +72,45 @@ class StorageService {
           CREATE TABLE IF NOT EXISTS current_job (
             id TEXT PRIMARY KEY,
             assigneeId TEXT,
+            customerId TEXT,
             description TEXT,
+            status TEXT DEFAULT 'CREATED',
             sleepSweden INTEGER DEFAULT 0,
             sleepNorway INTEGER DEFAULT 0,
             startCountry TEXT,
             deliveryCountry TEXT,
+            trailerNo TEXT,
+            trackNo TEXT,
+            tripPath TEXT,
             startDatetime TEXT,
             endDatetime TEXT,
             isReceived INTEGER DEFAULT 0,
             isFinished INTEGER DEFAULT 0,
             createdAt TEXT,
-            updatedAt TEXT NOT NULL
+            updatedAt TEXT NOT NULL,
+            deletedAt TEXT
           );
         `);
+
+        // Migration: Add new columns if they don't exist (for existing installations)
+        try {
+          await this.db.executeSql('ALTER TABLE current_job ADD COLUMN customerId TEXT;');
+        } catch (e) { /* Column already exists */ }
+        try {
+          await this.db.executeSql('ALTER TABLE current_job ADD COLUMN status TEXT DEFAULT "CREATED";');
+        } catch (e) { /* Column already exists */ }
+        try {
+          await this.db.executeSql('ALTER TABLE current_job ADD COLUMN trailerNo TEXT;');
+        } catch (e) { /* Column already exists */ }
+        try {
+          await this.db.executeSql('ALTER TABLE current_job ADD COLUMN trackNo TEXT;');
+        } catch (e) { /* Column already exists */ }
+        try {
+          await this.db.executeSql('ALTER TABLE current_job ADD COLUMN tripPath TEXT;');
+        } catch (e) { /* Column already exists */ }
+        try {
+          await this.db.executeSql('ALTER TABLE current_job ADD COLUMN deletedAt TEXT;');
+        } catch (e) { /* Column already exists */ }
 
         console.log('✅ Unified database initialized successfully');
       } catch (error) {
@@ -254,26 +280,33 @@ class StorageService {
       
       const query = `
         INSERT INTO current_job 
-        (id, assigneeId, description, sleepSweden, sleepNorway, startCountry, 
-         deliveryCountry, startDatetime, endDatetime, isReceived, isFinished, 
-         createdAt, updatedAt) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, assigneeId, customerId, description, status, sleepSweden, sleepNorway, 
+         startCountry, deliveryCountry, trailerNo, trackNo, tripPath,
+         startDatetime, endDatetime, isReceived, isFinished, 
+         createdAt, updatedAt, deletedAt) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       
       await this.db.executeSql(query, [
         job.id,
         job.assigneeId || null,
+        job.customerId || null,
         job.description || null,
+        job.status || 'CREATED',
         job.sleepSweden || 0,
         job.sleepNorway || 0,
         job.startCountry || null,
         job.deliveryCountry || null,
-        job.startDatetime ? (typeof job.startDatetime === 'string' ? job.startDatetime : job.startDatetime.toISOString()) : null,
-        job.endDatetime ? (typeof job.endDatetime === 'string' ? job.endDatetime : job.endDatetime.toISOString()) : null,
+        job.trailerNo || null,
+        job.trackNo || null,
+        job.tripPath || null,
+        job.startDatetime ? (typeof job.startDatetime === 'string' ? job.startDatetime : (job.startDatetime as Date).toISOString()) : null,
+        job.endDatetime ? (typeof job.endDatetime === 'string' ? job.endDatetime : (job.endDatetime as Date).toISOString()) : null,
         job.isReceived ? 1 : 0,
         job.isFinished ? 1 : 0,
-        job.createdAt ? (typeof job.createdAt === 'string' ? job.createdAt : job.createdAt.toISOString()) : null,
-        job.updatedAt ? (typeof job.updatedAt === 'string' ? job.updatedAt : job.updatedAt.toISOString()) : new Date().toISOString(),
+        job.createdAt ? (typeof job.createdAt === 'string' ? job.createdAt : (job.createdAt as Date).toISOString()) : null,
+        job.updatedAt ? (typeof job.updatedAt === 'string' ? job.updatedAt : (job.updatedAt as Date).toISOString()) : new Date().toISOString(),
+        job.deletedAt ? (typeof job.deletedAt === 'string' ? job.deletedAt : (job.deletedAt as Date).toISOString()) : null,
       ]);
       
       console.log('✅ Job saved to SQLite:', job.id);
@@ -307,17 +340,23 @@ class StorageService {
       return {
         id: row.id,
         assigneeId: row.assigneeId,
+        customerId: row.customerId || null,
         description: row.description,
+        status: row.status || 'CREATED',
         sleepSweden: row.sleepSweden || 0,
         sleepNorway: row.sleepNorway || 0,
         startCountry: row.startCountry,
         deliveryCountry: row.deliveryCountry,
-        startDatetime: row.startDatetime || undefined,
-        endDatetime: row.endDatetime || undefined,
+        trailerNo: row.trailerNo || null,
+        trackNo: row.trackNo || null,
+        tripPath: row.tripPath || null,
+        startDatetime: row.startDatetime || null,
+        endDatetime: row.endDatetime || null,
         isReceived: row.isReceived === 1,
         isFinished: row.isFinished === 1,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
+        deletedAt: row.deletedAt || null,
       };
     } catch (error) {
       console.error('❌ Error getting job:', error);
