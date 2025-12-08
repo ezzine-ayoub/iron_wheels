@@ -12,6 +12,7 @@ import {
     Image,
     ImageBackground,
 } from 'react-native';
+import Icon from 'react-native-vector-icons/Feather';
 
 import {colors} from './theme';
 import {authService} from '../services/authService';
@@ -32,6 +33,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
     const [showPasswordModal, setShowPasswordModal] = useState(false);
     const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
     const [responseRequest, setResponseRequest] = useState({});
+    const [showPassword, setShowPassword] = useState(false);
 
     const handleLogin = async () => {
         if (!driverNo || !password) {
@@ -137,17 +139,29 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
 
                         <View style={styles.inputContainer}>
                             <Text style={styles.label}>Password</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Enter your password"
-                                value={password}
-                                onChangeText={setPassword}
-                                secureTextEntry
-                                autoCapitalize="none"
-                                autoCorrect={false}
-                                editable={!loading}
-                                placeholderTextColor={colors.textSecondary}
-                            />
+                            <View style={styles.passwordContainer}>
+                                <TextInput
+                                    style={styles.passwordInput}
+                                    placeholder="Enter your password"
+                                    value={password}
+                                    onChangeText={setPassword}
+                                    secureTextEntry={!showPassword}
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                    editable={!loading}
+                                    placeholderTextColor={colors.textSecondary}
+                                />
+                                <TouchableOpacity
+                                    style={styles.eyeButton}
+                                    onPress={() => setShowPassword(!showPassword)}
+                                >
+                                    <Icon
+                                        name={showPassword ? 'eye' : 'eye-off'}
+                                        size={22}
+                                        color={colors.textSecondary}
+                                    />
+                                </TouchableOpacity>
+                            </View>
                         </View>
 
                         <TouchableOpacity
@@ -188,6 +202,23 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
                         if (user?.id) {
                             await websocketService.connect(user.id);
                             console.log('✅ WebSocket connected after password change');
+                        }
+                    } catch (error) {
+                        console.warn('⚠️ Could not connect WebSocket:', error);
+                    }
+                    
+                    onLoginSuccess();
+                }}
+                onCancel={async () => {
+                    console.log('⏭️ Password change skipped, redirecting to Home');
+                    setShowPasswordModal(false);
+                    
+                    // ✅ Connect WebSocket for real-time updates
+                    try {
+                        const user = responseRequest as any;
+                        if (user?.id) {
+                            await websocketService.connect(user.id);
+                            console.log('✅ WebSocket connected after cancel');
                         }
                     } catch (error) {
                         console.warn('⚠️ Could not connect WebSocket:', error);
@@ -282,6 +313,30 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 4,
         elevation: 2,
+    },
+    passwordContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.3)',
+        borderRadius: 10,
+        shadowColor: '#000',
+        shadowOffset: {width: 0, height: 2},
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    passwordInput: {
+        flex: 1,
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        fontSize: 16,
+        color: colors.text,
+    },
+    eyeButton: {
+        paddingHorizontal: 14,
+        paddingVertical: 14,
     },
     button: {
         backgroundColor: colors.primary,

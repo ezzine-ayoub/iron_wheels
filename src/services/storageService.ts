@@ -71,12 +71,14 @@ class StorageService {
         await this.db.executeSql(`
           CREATE TABLE IF NOT EXISTS current_job (
             id TEXT PRIMARY KEY,
+            sequence INTEGER,
             assigneeId TEXT,
             customerId TEXT,
             description TEXT,
             status TEXT DEFAULT 'CREATED',
             sleepSweden INTEGER DEFAULT 0,
             sleepNorway INTEGER DEFAULT 0,
+            sleepTracking TEXT,
             startCountry TEXT,
             deliveryCountry TEXT,
             trailerNo TEXT,
@@ -110,6 +112,12 @@ class StorageService {
         } catch (e) { /* Column already exists */ }
         try {
           await this.db.executeSql('ALTER TABLE current_job ADD COLUMN deletedAt TEXT;');
+        } catch (e) { /* Column already exists */ }
+        try {
+          await this.db.executeSql('ALTER TABLE current_job ADD COLUMN sequence INTEGER;');
+        } catch (e) { /* Column already exists */ }
+        try {
+          await this.db.executeSql('ALTER TABLE current_job ADD COLUMN sleepTracking TEXT;');
         } catch (e) { /* Column already exists */ }
 
         console.log('✅ Unified database initialized successfully');
@@ -280,21 +288,26 @@ class StorageService {
       
       const query = `
         INSERT INTO current_job 
-        (id, assigneeId, customerId, description, status, sleepSweden, sleepNorway, 
-         startCountry, deliveryCountry, trailerNo, trackNo, tripPath,
+        (id, sequence, assigneeId, customerId, description, status, sleepSweden, sleepNorway, 
+         sleepTracking, startCountry, deliveryCountry, trailerNo, trackNo, tripPath,
          startDatetime, endDatetime, isReceived, isFinished, 
          createdAt, updatedAt, deletedAt) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
+      
+      // Serialize sleepTracking to JSON string
+      const sleepTrackingStr = job.sleepTracking ? JSON.stringify(job.sleepTracking) : null;
       
       await this.db.executeSql(query, [
         job.id,
+        job.sequence || null,
         job.assigneeId || null,
         job.customerId || null,
         job.description || null,
         job.status || 'CREATED',
         job.sleepSweden || 0,
         job.sleepNorway || 0,
+        sleepTrackingStr,
         job.startCountry || null,
         job.deliveryCountry || null,
         job.trailerNo || null,
@@ -337,14 +350,26 @@ class StorageService {
       
       const row = results.rows.item(0);
       
+      // Parse sleepTracking from JSON string
+      let sleepTracking = null;
+      if (row.sleepTracking) {
+        try {
+          sleepTracking = JSON.parse(row.sleepTracking);
+        } catch (e) {
+          console.warn('⚠️ Failed to parse sleepTracking:', e);
+        }
+      }
+      
       return {
         id: row.id,
+        sequence: row.sequence || null,
         assigneeId: row.assigneeId,
         customerId: row.customerId || null,
         description: row.description,
         status: row.status || 'CREATED',
         sleepSweden: row.sleepSweden || 0,
         sleepNorway: row.sleepNorway || 0,
+        sleepTracking: sleepTracking,
         startCountry: row.startCountry,
         deliveryCountry: row.deliveryCountry,
         trailerNo: row.trailerNo || null,

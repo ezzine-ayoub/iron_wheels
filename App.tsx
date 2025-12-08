@@ -16,12 +16,27 @@ import FirebaseNotificationService from './src/services/FirebaseNotificationServ
  * Convert job data to proper format for SQLite
  */
 function formatJobForStorage(jobData: any) {
+  // Parse sleepTracking if it's a string
+  let sleepTracking = null;
+  if (jobData.sleepTracking) {
+    try {
+      sleepTracking = typeof jobData.sleepTracking === 'string' 
+        ? JSON.parse(jobData.sleepTracking) 
+        : jobData.sleepTracking;
+    } catch (e) {
+      console.warn('⚠️ Failed to parse sleepTracking:', e);
+    }
+  }
+
   return {
     id: jobData.id,
+    sequence: parseInt(jobData.sequence) || null,
     assigneeId: jobData.assigneeId || null,
     description: jobData.description || '',
+    status: jobData.status || 'CREATED',
     sleepSweden: parseInt(jobData.sleepSweden) || 0,
     sleepNorway: parseInt(jobData.sleepNorway) || 0,
+    sleepTracking: sleepTracking,
     startCountry: jobData.startCountry || null,
     deliveryCountry: jobData.deliveryCountry || null,
     tripPath: jobData.tripPath || '',

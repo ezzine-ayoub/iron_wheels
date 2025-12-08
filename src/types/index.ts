@@ -12,6 +12,8 @@ export enum CountryType {
 export enum JobStatus {
   CREATED = 'CREATED',
   RECEIVED = 'RECEIVED',
+  STARTED = 'STARTED',
+  FINISHED = 'FINISHED',
   IN_PROGRESS = 'IN_PROGRESS',
   COMPLETED = 'COMPLETED',
   CANCELLED = 'CANCELLED',
@@ -32,14 +34,23 @@ export interface User {
   updatedAt: Date;
 }
 
+// SleepTracking entry type
+export interface SleepTrackingEntry {
+  index: number;
+  city: string;
+  sleepAt: string | null;
+}
+
 export interface Job {
   id: string;
+  sequence?: number;
   assigneeId: string;
   customerId?: string | null;
   description: string;
   status: JobStatus | string;
   sleepSweden: number;
   sleepNorway: number;
+  sleepTracking?: SleepTrackingEntry[] | null;
   startCountry: string;
   deliveryCountry: string;
   trailerNo?: string | null;

@@ -10,12 +10,14 @@ import {
     ActivityIndicator,
     Alert,
 } from 'react-native';
+import Icon from 'react-native-vector-icons/Feather';
 import {colors} from '../screens/theme';
 import FirebaseNotificationService from '../services/FirebaseNotificationService';
 
 interface ChangePasswordModalProps {
     visible: boolean;
     onPasswordChanged: () => void;
+    onCancel: () => void;
     oldPasswordChanged: string;
     response: any;
 }
@@ -23,6 +25,7 @@ interface ChangePasswordModalProps {
 const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
                                                                      visible,
                                                                      onPasswordChanged,
+                                                                     onCancel,
                                                                      oldPasswordChanged,
                                                                      response,
                                                                  }) => {
@@ -31,6 +34,9 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
     const [confirmPassword, setConfirmPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [errors, setErrors] = useState({old: '', new: '', confirm: ''});
+    const [showOldPassword, setShowOldPassword] = useState(false);
+    const [showNewPassword, setShowNewPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
     const validateForm = (): boolean => {
         const newErrors = {old: '', new: '', confirm: ''};
@@ -70,6 +76,8 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         setNewPassword('');
         setConfirmPassword('');
         setErrors({old: '', new: '', confirm: ''});
+        // Close modal and redirect
+        onCancel();
     };
 
     const handleChangePassword = async () => {
@@ -126,40 +134,78 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
                     <Text style={styles.title}>Password Change Required</Text>
                     <Text style={styles.subtitle}>Change your password to continue</Text>
 
-                    <TextInput
-                        style={[styles.input, errors.old && styles.inputError]}
-                        placeholder="Old password"
-                        value={oldPassword}
-                        onChangeText={(text) => {
-                            setOldPassword(text);
-                            // Reset error when user types again
-                            if (errors.old) {
-                                setErrors({...errors, old: ''});
-                            }
-                        }}
-                        secureTextEntry
-                        editable={!loading}
-                    />
+                    <View style={[styles.inputContainer, errors.old && styles.inputError]}>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Old password"
+                            placeholderTextColor="#999"
+                            value={oldPassword}
+                            onChangeText={(text) => {
+                                setOldPassword(text);
+                                if (errors.old) {
+                                    setErrors({...errors, old: ''});
+                                }
+                            }}
+                            secureTextEntry={!showOldPassword}
+                            editable={!loading}
+                        />
+                        <TouchableOpacity
+                            style={styles.eyeButton}
+                            onPress={() => setShowOldPassword(!showOldPassword)}
+                        >
+                            <Icon
+                                name={showOldPassword ? 'eye' : 'eye-off'}
+                                size={20}
+                                color="#666"
+                            />
+                        </TouchableOpacity>
+                    </View>
                     {errors.old ? <Text style={styles.error}>{errors.old}</Text> : null}
 
-                    <TextInput
-                        style={[styles.input, errors.new && styles.inputError]}
-                        placeholder="New password"
-                        value={newPassword}
-                        onChangeText={setNewPassword}
-                        secureTextEntry
-                        editable={!loading}
-                    />
+                    <View style={[styles.inputContainer, errors.new && styles.inputError]}>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="New password"
+                            placeholderTextColor="#999"
+                            value={newPassword}
+                            onChangeText={setNewPassword}
+                            secureTextEntry={!showNewPassword}
+                            editable={!loading}
+                        />
+                        <TouchableOpacity
+                            style={styles.eyeButton}
+                            onPress={() => setShowNewPassword(!showNewPassword)}
+                        >
+                            <Icon
+                                name={showNewPassword ? 'eye' : 'eye-off'}
+                                size={20}
+                                color="#666"
+                            />
+                        </TouchableOpacity>
+                    </View>
                     {errors.new ? <Text style={styles.error}>{errors.new}</Text> : null}
 
-                    <TextInput
-                        style={[styles.input, errors.confirm && styles.inputError]}
-                        placeholder="Confirm password"
-                        value={confirmPassword}
-                        onChangeText={setConfirmPassword}
-                        secureTextEntry
-                        editable={!loading}
-                    />
+                    <View style={[styles.inputContainer, errors.confirm && styles.inputError]}>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Confirm password"
+                            placeholderTextColor="#999"
+                            value={confirmPassword}
+                            onChangeText={setConfirmPassword}
+                            secureTextEntry={!showConfirmPassword}
+                            editable={!loading}
+                        />
+                        <TouchableOpacity
+                            style={styles.eyeButton}
+                            onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                        >
+                            <Icon
+                                name={showConfirmPassword ? 'eye' : 'eye-off'}
+                                size={20}
+                                color="#666"
+                            />
+                        </TouchableOpacity>
+                    </View>
                     {errors.confirm ? <Text style={styles.error}>{errors.confirm}</Text> : null}
 
                     <View style={styles.buttonContainer}>
@@ -191,7 +237,23 @@ const styles = StyleSheet.create({
     icon: {fontSize: 48, textAlign: 'center', marginBottom: 12},
     title: {fontSize: 20, fontWeight: 'bold', textAlign: 'center', marginBottom: 8},
     subtitle: {fontSize: 14, color: '#666', textAlign: 'center', marginBottom: 20},
-    input: {backgroundColor: '#F5F5F5', borderRadius: 10, padding: 12, marginBottom: 12, fontSize: 16},
+    inputContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#F5F5F5',
+        borderRadius: 10,
+        marginBottom: 12,
+    },
+    input: {
+        flex: 1,
+        padding: 12,
+        fontSize: 16,
+        color: '#333',
+    },
+    eyeButton: {
+        paddingHorizontal: 12,
+        paddingVertical: 12,
+    },
     inputError: {borderColor: 'red', borderWidth: 1},
     error: {color: 'red', fontSize: 12, marginTop: -8, marginBottom: 8},
     buttonContainer: {flexDirection: 'row', gap: 12, marginTop: 8},

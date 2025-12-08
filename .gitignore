@@ -9,7 +9,8 @@ yarn-debug.log*
 yarn-error.log*
 .cxx
 cxx
-*.cxx
+build
+.idea
 # Logs
 logs/
 *.log

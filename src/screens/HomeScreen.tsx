@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import RenderHtml from 'react-native-render-html';
 import NetInfo from '@react-native-community/netinfo';
-import {Job} from '../types';
+import {Job, SleepTrackingEntry} from '../types';
 import {colors} from './theme';
 import {apiClient} from '../services/apiClient';
 import {authService} from '../services/authService';
@@ -56,6 +56,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
     const [pendingActionsCount, setPendingActionsCount] = useState(0);
     const [isSyncing, setIsSyncing] = useState(false);
     const [isAutoSyncing, setIsAutoSyncing] = useState(false);
+    // Local state for sleep tracking checkboxes
+    const [localSleepTracking, setLocalSleepTracking] = useState<SleepTrackingEntry[]>([]);
 
     // 🆕 Listen to Firebase notification events for real-time updates
     useAppEvents({
@@ -255,13 +257,21 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
         if (jobData.isReceived && !jobData.startDatetime) {
             return 'start';
         }
-        // Step 3: Started but sleep not logged yet (startDatetime exists but endDatetime doesn't)
-        if (jobData.startDatetime && jobData.endDatetime===null && jobData.sleepNorway===0 && jobData.sleepSweden==0) {
-            return 'sleep';
-        }
-        // Step 4: Sleep logged but not finished (endDatetime exists but not finished)
-        if (!jobData.endDatetime && !jobData.isFinished) {
-            return 'finish';
+        
+        // Step 3 & 4: Started and not finished
+        if (jobData.startDatetime && !jobData.isFinished) {
+            // Check if all cities in sleepTracking are checked
+            const sleepTracking = jobData.sleepTracking || [];
+            const allCitiesChecked = sleepTracking.length > 0 && 
+                sleepTracking.every((entry: SleepTrackingEntry) => entry.sleepAt !== null);
+            
+            if (allCitiesChecked) {
+                // All cities checked - show only Finish button
+                return 'finish';
+            } else {
+                // Not all cities checked - show Sleep + End Job
+                return 'sleep';
+            }
         }
 
         return null;
@@ -443,6 +453,11 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
             return;
         }
         
+        // Initialize local sleep tracking from job
+        if (job?.sleepTracking) {
+            setLocalSleepTracking([...job.sleepTracking]);
+        }
+        
         openConfirmationModal(
             'Confirm',
             'Are you sure you want to sleep?',
@@ -454,7 +469,48 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
         );
     };
 
-    const handleCountryChoice = async (country: string) => {
+    // Toggle local checkbox (no API call yet) - can toggle on/off for pending items
+    // When checking a city, automatically check all previous unchecked cities with same timestamp
+    const handleCheckboxToggle = (index: number) => {
+        const now = new Date().toISOString();
+        
+        setLocalSleepTracking(prev => 
+            prev.map(entry => {
+                // Check if this was already saved in database
+                const originalEntry = job?.sleepTracking?.find(
+                    (e: SleepTrackingEntry) => e.index === entry.index
+                );
+                const wasAlreadySaved = originalEntry?.sleepAt !== null;
+                
+                // If already saved in DB, don't allow toggle
+                if (wasAlreadySaved) return entry;
+                
+                // If clicking on a checkbox to CHECK it
+                if (entry.index === index && entry.sleepAt === null) {
+                    return { ...entry, sleepAt: now };
+                }
+                
+                // If clicking on a checkbox to UNCHECK it
+                if (entry.index === index && entry.sleepAt !== null) {
+                    return { ...entry, sleepAt: null };
+                }
+                
+                // Auto-check all previous unchecked cities when checking a later one
+                if (entry.index < index && entry.sleepAt === null) {
+                    // Only auto-check if we're checking (not unchecking)
+                    const clickedEntry = prev.find(e => e.index === index);
+                    if (clickedEntry?.sleepAt === null) {
+                        return { ...entry, sleepAt: now };
+                    }
+                }
+                
+                return entry;
+            })
+        );
+    };
+
+    // Submit sleep with country selection
+    const handleSleepSubmit = async (country: 'sweden' | 'norway') => {
         if (!job || !job.id) {
             console.error('❌ Error logging sleep:', 'Job or job ID is null');
             return;
@@ -471,38 +527,39 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
 
         try {
             setActionLoading(true);
-            setShowModal(false);
 
-            console.log('😴 Logging sleep in:', country);
+            // Get indices of newly checked items (items that were null in original but now have sleepAt)
+            const originalTracking = job.sleepTracking || [];
+            const newlyCheckedIndices = localSleepTracking
+                .filter((entry, idx) => 
+                    entry.sleepAt !== null && 
+                    (originalTracking[idx]?.sleepAt === null || originalTracking[idx]?.sleepAt === undefined)
+                )
+                .map(entry => entry.index);
 
+            console.log('😴 Submitting sleep:', { country, newlyCheckedIndices });
+
+            // Call API with all data
             const updatedJob = await apiClient.post<Job>(`/jobs/${job.id}/sleep`, {
-                country: country.toLowerCase(),
+                country: country,
+                indices: newlyCheckedIndices,
             });
             
-            // If API returns null/empty, update local job manually
+            setShowModal(false);
+            
             if (!updatedJob || !updatedJob.id) {
-                console.log('⚠️ API returned empty response, updating local job manually');
-                const localUpdatedJob = await storageService.updateSleepStatus(job.id, country);
-                if (localUpdatedJob) {
-                    setJob(localUpdatedJob);
-                    const step = determineCurrentStep(localUpdatedJob);
-                    setCurrentStep(step);
-                    console.log('📍 New step (local):', step);
-                }
+                console.log('⚠️ API returned empty response, refetching job');
+                await fetchJob();
             } else {
-                // Update job with response
                 setJob(updatedJob);
-
-                // Determine new step
+                await storageService.saveJob(updatedJob);
                 const step = determineCurrentStep(updatedJob);
                 setCurrentStep(step);
                 console.log('📍 New step:', step);
             }
         } catch (error: any) {
             console.log('❌ Error logging sleep:', error);
-            if (job && job.id) {
-                Alert.alert('Error', 'Failed to sleep. Please try again.');
-            }
+            Alert.alert('Error', 'Failed to record sleep. Please try again.');
         } finally {
             setActionLoading(false);
         }
@@ -515,49 +572,31 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
         }
         try {
             setActionLoading(true);
-            console.log('😴 Logging sleep in:', country);
+            console.log('😴 Logging sleep for country:', country);
             
             if (!isConnected) {
-                // Update job locally
-                const updatedJob = await storageService.updateSleepStatus(job.id, country);
-                if (updatedJob) {
-                    setJob(updatedJob);
-                    const step = determineCurrentStep(updatedJob);
-                    setCurrentStep(step);
-                }
-                
                 // Save to offline queue
                 await syncService.addPendingAction({
                     jobId: job.id,
                     actionType: 'sleep',
-                    actionData: JSON.stringify({ country: country.toLowerCase() }),
+                    actionData: JSON.stringify({ country, indices: [] }),
                     timestamp: new Date().toISOString(),
                 });
-                // Alert.alert('Saved Offline', 'Sleep logged locally. Will sync when online.');
                 await checkPendingActions();
                 return;
             }
             
             const updatedJob = await apiClient.post<Job>(`/jobs/${job.id}/sleep`, {
-                country: country.toLowerCase(),
+                country: country,
+                indices: [],
             });
             
-            // If API returns null/empty, update local job manually
             if (!updatedJob || !updatedJob.id) {
-                console.log('⚠️ API returned empty response, updating local job manually');
-                const localUpdatedJob = await storageService.updateSleepStatus(job.id, country);
-                if (localUpdatedJob) {
-                    setJob(localUpdatedJob);
-                    const step = determineCurrentStep(localUpdatedJob);
-                    setCurrentStep(step);
-                    console.log('📍 New step (local):', step);
-                }
+                console.log('⚠️ API returned empty response, refetching job');
+                await fetchJob();
             } else {
                 setJob(updatedJob);
-                
-                // Save to local storage
                 await storageService.saveJob(updatedJob);
-                
                 const step = determineCurrentStep(updatedJob);
                 setCurrentStep(step);
                 console.log('📍 New step:', step);
@@ -667,6 +706,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
                     await performSleepAction(pendingCountryChoice);
                     setPendingCountryChoice(null);
                 } else {
+                    // Initialize local sleep tracking from job
+                    if (job?.sleepTracking) {
+                        setLocalSleepTracking([...job.sleepTracking]);
+                    }
                     setShowModal(true);
                 }
                 break;
@@ -1091,7 +1134,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
                         </View>
                     )}
 
-                    {/* Modal for Country Selection */}
+                    {/* Modal for Sleep Tracking Selection */}
                     <Modal
                         visible={showModal}
                         transparent={true}
@@ -1109,32 +1152,103 @@ const HomeScreen: React.FC<HomeScreenProps> = ({onLogout}) => {
                                         <View style={[styles.closeIconLine, styles.closeIconLine2]}/>
                                     </View>
                                 </TouchableOpacity>
-                                <Text style={styles.modalTitle}>Where do you sleep?</Text>
-                                <Text style={styles.modalSubtitle}>Select the country</Text>
+                                <Text style={styles.modalTitle}>Where did you sleep?</Text>
+                                <Text style={styles.modalSubtitle}>Select the city from your route</Text>
 
-                                <TouchableOpacity
-                                    style={[styles.modalButton, styles.swedenButton]}
-                                    onPress={() => handleCountryChoice('Sweden')}
-                                    disabled={actionLoading}
+                                <ScrollView 
+                                    style={styles.sleepTrackingList} 
+                                    contentContainerStyle={styles.sleepTrackingListContent}
+                                    showsVerticalScrollIndicator={true}
+                                    nestedScrollEnabled={true}
                                 >
-                                    {actionLoading ? (
-                                        <ActivityIndicator color={colors.white}/>
+                                    {localSleepTracking && localSleepTracking.length > 0 ? (
+                                        localSleepTracking.map((entry: SleepTrackingEntry) => {
+                                            // Check if it was already checked before opening modal
+                                            const wasAlreadyChecked = job?.sleepTracking?.find(
+                                                (e: SleepTrackingEntry) => e.index === entry.index
+                                            )?.sleepAt !== null;
+                                            const isChecked = entry.sleepAt !== null;
+                                            
+                                            return (
+                                                <TouchableOpacity
+                                                    key={entry.index}
+                                                    style={[
+                                                        styles.sleepTrackingItem,
+                                                        isChecked && styles.sleepTrackingItemChecked,
+                                                        wasAlreadyChecked && styles.sleepTrackingItemDisabled,
+                                                    ]}
+                                                    onPress={() => !wasAlreadyChecked && handleCheckboxToggle(entry.index)}
+                                                    disabled={wasAlreadyChecked || actionLoading}
+                                                >
+                                                    <View style={styles.sleepTrackingCheckbox}>
+                                                        {isChecked ? (
+                                                            <View style={[
+                                                                styles.checkboxChecked,
+                                                                wasAlreadyChecked && styles.checkboxDisabled,
+                                                            ]}>
+                                                                <Text style={styles.checkmark}>✓</Text>
+                                                            </View>
+                                                        ) : (
+                                                            <View style={styles.checkboxUnchecked} />
+                                                        )}
+                                                    </View>
+                                                    <View style={styles.sleepTrackingInfo}>
+                                                        <Text style={[
+                                                            styles.sleepTrackingCity,
+                                                            isChecked && styles.sleepTrackingCityChecked,
+                                                        ]}>
+                                                            {entry.city.charAt(0).toUpperCase() + entry.city.slice(1)}
+                                                        </Text>
+                                                        {wasAlreadyChecked && entry.sleepAt && (
+                                                            <Text style={styles.sleepTrackingDate}>
+                                                                {new Date(entry.sleepAt).toLocaleDateString()} {new Date(entry.sleepAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                                            </Text>
+                                                        )}
+                                                        {!wasAlreadyChecked && isChecked && (
+                                                            <Text style={styles.sleepTrackingPending}>Pending...</Text>
+                                                        )}
+                                                    </View>
+                                                    <Text style={styles.sleepTrackingIndex}>#{entry.index + 1}</Text>
+                                                </TouchableOpacity>
+                                            );
+                                        })
                                     ) : (
-                                        <Text style={styles.modalButtonText}>🇸🇪 Sweden</Text>
+                                        <Text style={styles.noSleepTrackingText}>No route cities available</Text>
                                     )}
-                                </TouchableOpacity>
+                                </ScrollView>
 
-                                <TouchableOpacity
-                                    style={[styles.modalButton, styles.norwayButton]}
-                                    onPress={() => handleCountryChoice('Norway')}
-                                    disabled={actionLoading}
-                                >
-                                    {actionLoading ? (
-                                        <ActivityIndicator color={colors.white}/>
-                                    ) : (
-                                        <Text style={styles.modalButtonText}>🇳🇴 Norway</Text>
-                                    )}
-                                </TouchableOpacity>
+                                {/* Country Buttons - Submit */}
+                                <View style={styles.countryButtonsContainer}>
+                                    <TouchableOpacity
+                                        style={[styles.countryButton, styles.swedenButton, actionLoading && styles.buttonDisabled]}
+                                        onPress={() => handleSleepSubmit('sweden')}
+                                        disabled={actionLoading}
+                                    >
+                                        {actionLoading ? (
+                                            <ActivityIndicator color={colors.white} size="small" />
+                                        ) : (
+                                            <Text style={styles.countryButtonText}>🇸🇪 Sweden</Text>
+                                        )}
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity
+                                        style={[styles.countryButton, styles.norwayButton, actionLoading && styles.buttonDisabled]}
+                                        onPress={() => handleSleepSubmit('norway')}
+                                        disabled={actionLoading}
+                                    >
+                                        {actionLoading ? (
+                                            <ActivityIndicator color={colors.white} size="small" />
+                                        ) : (
+                                            <Text style={styles.countryButtonText}>🇳🇴 Norway</Text>
+                                        )}
+                                    </TouchableOpacity>
+                                </View>
+
+                                {actionLoading && (
+                                    <View style={styles.loadingOverlay}>
+                                        <ActivityIndicator size="large" color={colors.primary}/>
+                                    </View>
+                                )}
                             </View>
                         </View>
                     </Modal>
@@ -1495,6 +1609,7 @@ const styles = StyleSheet.create({
     modalContent: {
         width: '85%',
         maxWidth: 400,
+        maxHeight: '70%',
         backgroundColor: colors.white,
         borderRadius: 16,
         padding: 24,
@@ -1560,6 +1675,133 @@ const styles = StyleSheet.create({
     modalButtonText: {
         color: colors.white,
         fontSize: 18,
+        fontWeight: '600',
+    },
+    // Sleep Tracking Modal Styles
+    sleepTrackingList: {
+        width: '100%',
+        maxHeight: 250,
+        marginBottom: 16,
+    },
+    sleepTrackingListContent: {
+        paddingBottom: 8,
+    },
+    sleepTrackingItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f8f9fa',
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 10,
+        borderWidth: 2,
+        borderColor: 'transparent',
+    },
+    sleepTrackingItemChecked: {
+        backgroundColor: '#e8f5e9',
+        borderColor: colors.success,
+    },
+    sleepTrackingItemDisabled: {
+        opacity: 0.7,
+    },
+    sleepTrackingCheckbox: {
+        marginRight: 12,
+    },
+    checkboxUnchecked: {
+        width: 24,
+        height: 24,
+        borderRadius: 6,
+        borderWidth: 2,
+        borderColor: colors.textSecondary,
+        backgroundColor: colors.white,
+    },
+    checkboxChecked: {
+        width: 24,
+        height: 24,
+        borderRadius: 6,
+        backgroundColor: colors.success,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    checkboxDisabled: {
+        backgroundColor: '#9e9e9e',
+    },
+    checkmark: {
+        color: colors.white,
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    sleepTrackingInfo: {
+        flex: 1,
+    },
+    sleepTrackingCity: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: colors.text,
+        textTransform: 'capitalize',
+    },
+    sleepTrackingCityChecked: {
+        color: colors.success,
+    },
+    sleepTrackingDate: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        marginTop: 2,
+    },
+    sleepTrackingPending: {
+        fontSize: 12,
+        color: colors.warning,
+        marginTop: 2,
+        fontStyle: 'italic',
+    },
+    sleepTrackingIndex: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        fontWeight: '500',
+    },
+    noSleepTrackingText: {
+        textAlign: 'center',
+        color: colors.textSecondary,
+        fontSize: 14,
+        paddingVertical: 20,
+    },
+    loadingOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(255,255,255,0.8)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderRadius: 16,
+    },
+    // Country Buttons
+    countryButtonsContainer: {
+        flexDirection: 'row',
+        width: '100%',
+        gap: 12,
+        marginTop: 8,
+    },
+    countryButton: {
+        flex: 1,
+        borderRadius: 10,
+        paddingVertical: 14,
+        alignItems: 'center',
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: {width: 0, height: 2},
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+    },
+    swedenButton: {
+        backgroundColor: '#006AA7',
+    },
+    norwayButton: {
+        backgroundColor: '#BA0C2F',
+    },
+    countryButtonText: {
+        color: colors.white,
+        fontSize: 16,
         fontWeight: '600',
     },
     tripPathLabel: {

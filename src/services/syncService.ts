@@ -291,7 +291,7 @@ class SyncService {
           case 'sleep':
             const sleepData = action.actionData ? JSON.parse(action.actionData) : {};
             response = await apiClient.post<Job>(`/jobs/${action.jobId}/sleep`, sleepData);
-            console.log('✅ Synced: Sleep', sleepData.country);
+            console.log('✅ Synced: Sleep at index', sleepData.index);
             break;
 
           case 'finish':
