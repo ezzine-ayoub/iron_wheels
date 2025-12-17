@@ -490,7 +490,7 @@ export const authService = {
         try {
             console.log('🔑 Forgot password attempt...', email);
 
-            const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+            const response = await fetch(`${API_BASE_URL}/users/forgot-password`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

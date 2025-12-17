@@ -95,7 +95,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({onLoginSuccess}) => {
     };
 
     const handleForgotPassword = () => {
-        setShowForgotPasswordModal(true);
+
+      setShowForgotPasswordModal(true);
     };
 
     return (

@@ -47,8 +47,12 @@ export function useAppEvent(
  * ```
  */
 export function useAppEvents(
-  eventHandlers: Record<AppEventType, (data?: any) => void>,
-  deps: any[] = []
+    eventHandlers: {
+        [AppEvents.JOB_CREATED]: (data) => void;
+        [AppEvents.JOB_UPDATED]: (data) => void;
+        [AppEvents.JOB_DELETED]: (data) => void
+    },
+    deps: any[] = []
 ) {
   const handlersRef = useRef(eventHandlers);
 

@@ -344,7 +344,7 @@ class NotificationManager(models.Model):
         user = self.env['res.users'].browse(user_id)
         
         response = requests.post(
-            'http://localhost:3000/send',
+            'https://api.ironwheelsdriver.comsend',
             json={
                 'token': user.fcm_token,
                 'notification': {'title': title, 'body': body},

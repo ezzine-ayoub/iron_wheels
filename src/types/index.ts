@@ -38,7 +38,11 @@ export interface User {
 export interface SleepTrackingEntry {
   index: number;
   city: string;
+  country: 'sweden' | 'norway' | null;
   sleepAt: string | null;
+  sleepCount: number;
+  isNew: boolean;
+  disabled: boolean | null;
 }
 
 export interface Job {
