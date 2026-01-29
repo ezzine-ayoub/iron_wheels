@@ -40,6 +40,7 @@ export interface SleepTrackingEntry {
   city: string;
   country: 'sweden' | 'norway' | null;
   sleepAt: string | null;
+  startAt: string | null;
   sleepCount: number;
   isNew: boolean;
   disabled: boolean | null;

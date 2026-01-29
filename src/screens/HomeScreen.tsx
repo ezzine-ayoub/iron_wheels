@@ -22,7 +22,6 @@ import { Job, SleepTrackingEntry } from '../types';
 import { colors } from './theme';
 import { apiClient } from '../services/apiClient';
 import { authService } from '../services/authService';
-import ConfirmationModal from '../components/ConfirmationModal';
 import NetworkIndicator from '../components/NetworkIndicator';
 import OfflineWarningModal from '../components/OfflineWarningModal';
 import SyncBar from '../components/SyncBar';
@@ -42,14 +41,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
   const [showModal, setShowModal] = useState(false);
   const [currentStep, setCurrentStep] = useState<'receive' | 'start' | 'sleep' | 'finish' | null>(null);
   const [message, setMessage] = useState(false);
-  const [confirmationModalVisible, setConfirmationModalVisible] = useState(false);
-  const [confirmationConfig, setConfirmationConfig] = useState({
-    title: '',
-    message: '',
-    onConfirm: () => {
-    },
-    confirmText: 'Confirm',
-  });
   const [isConnected, setIsConnected] = useState<boolean>(true);
   const [offlineWarningVisible, setOfflineWarningVisible] = useState(false);
   const [pendingActionType, setPendingActionType] = useState<'receive' | 'start' | 'sleep' | 'finish' | null>(null);
@@ -59,6 +50,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
   const [isAutoSyncing, setIsAutoSyncing] = useState(false);
   // Local state for sleep tracking checkboxes
   const [localSleepTracking, setLocalSleepTracking] = useState<SleepTrackingEntry[]>([]);
+  // 🆕 State for what to display in modal (filtered view)
+  const [displaySleepTracking, setDisplaySleepTracking] = useState<SleepTrackingEntry[]>([]);
   // 🆕 New states for custom city
   const [newCityName, setNewCityName] = useState('');
   const [showAddCityInput, setShowAddCityInput] = useState(false);
@@ -128,11 +121,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
   const checkPendingActions = async () => {
     const count = await syncService.getPendingActionsCount();
     setPendingActionsCount(count);
-  };
-
-  const openConfirmationModal = (title: string, message: string, onConfirm: () => void, confirmText: string) => {
-    setConfirmationConfig({ title, message, onConfirm, confirmText });
-    setConfirmationModalVisible(true);
   };
 
   const fetchJob = async (isRefreshing: boolean = false) => {
@@ -247,28 +235,39 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
       return 'receive';
     }
 
-    // Step 2: Received but not started (no startDatetime)
-    if (jobData.isReceived && !jobData.startDatetime) {
+    // If job is finished
+    if (jobData.isFinished) {
+      return null;
+    }
+
+    const sleepTracking = jobData.sleepTracking || [];
+    
+    // Find all disabled cities (cities that were started)
+    const disabledCities = sleepTracking.filter(
+      (entry: SleepTrackingEntry) => entry.disabled === true
+    );
+
+    // If no disabled cities exist, show Start (first time)
+    if (disabledCities.length === 0) {
       return 'start';
     }
 
-    // Step 3 & 4: Started and not finished
-    if (jobData.startDatetime && !jobData.isFinished) {
-      // Check if all cities in sleepTracking are checked
-      const sleepTracking = jobData.sleepTracking || [];
-      const allCitiesChecked = sleepTracking.length > 0 &&
-        sleepTracking.every((entry: SleepTrackingEntry) => entry.sleepAt !== null);
+    // Get the last disabled city (most recent location)
+    const lastDisabledCity = disabledCities[disabledCities.length - 1];
 
-      if (allCitiesChecked) {
-        // All cities checked - show only Finish button
-        return 'finish';
-      } else {
-        // Not all cities checked - show Sleep + End Job
-        return 'sleep';
-      }
+    // Check if last disabled city has been slept
+    // If startAt exists but sleepAt is null -> show Sleep
+    // If both startAt and sleepAt exist -> show Start (can start again)
+    if (lastDisabledCity.startAt !== null && lastDisabledCity.sleepAt === null) {
+      return 'sleep'; // Started but not slept yet
     }
 
-    return null;
+    if (lastDisabledCity.startAt !== null && lastDisabledCity.sleepAt !== null) {
+      return 'start'; // Slept, can start again
+    }
+
+    // Default: show Start
+    return 'start';
   };
 
   const handleReceive = async () => {
@@ -281,15 +280,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
       return;
     }
 
-    openConfirmationModal(
-      'Confirm',
-      'Are you sure you want to receive this job?',
-      async () => {
-        setConfirmationModalVisible(false);
-        await performReceiveAction();
-      },
-      'Confirm',
-    );
+    await performReceiveAction();
   };
 
   const performReceiveAction = async () => {
@@ -365,15 +356,125 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
       return;
     }
 
-    openConfirmationModal(
-      'Confirm',
-      'Are you sure you want to start this job?',
-      async () => {
-        setConfirmationModalVisible(false);
-        await performStartAction();
-      },
-      'Confim',
-    );
+    await performStartAction();
+  };
+
+  const handleStartFromLastCity = async () => {
+    if (!job || !job.id) {
+      console.error('❌ Error: No job available');
+      return;
+    }
+
+    // Check if offline
+    if (!isConnected) {
+      setPendingActionType('start');
+      setOfflineWarningVisible(true);
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      console.log('▶️ Starting from last city:', job.id);
+
+      const sleepTracking = job.sleepTracking || [];
+      
+      if (sleepTracking.length === 0) {
+        Alert.alert('Error', 'No cities available in route');
+        return;
+      }
+      
+      // Find last disabled city
+      const disabledCities = sleepTracking.filter((e: SleepTrackingEntry) => e.disabled === true);
+      
+      const now = new Date().toISOString();
+      let newCity: SleepTrackingEntry;
+      
+      if (disabledCities.length === 0) {
+        // No previous disabled city - start the first city in sleepTracking
+        const firstCity = sleepTracking[0];
+        console.log('ℹ️ No previous location found, starting first city:', firstCity.city);
+        
+        newCity = {
+          index: sleepTracking.length, // Next index
+          city: firstCity.city,
+          country: null,
+          startAt: now,
+          sleepAt: null,
+          sleepCount: 0,
+          disabled: true, // Mark as disabled when started
+        };
+      } else {
+        // Create new city with same name as last disabled city
+        const lastDisabledCity = disabledCities[disabledCities.length - 1];
+        console.log('✅ Found last disabled city:', lastDisabledCity.city);
+        
+        newCity = {
+          index: sleepTracking.length, // Next index
+          city: lastDisabledCity.city,
+          country: null,
+          startAt: now,
+          sleepAt: null,
+          sleepCount: 0,
+          disabled: true, // Mark as disabled when started
+        };
+      }
+
+      const updatedSleepTracking = [...sleepTracking, newCity];
+
+      console.log(`✅ Creating new city: ${newCity.city} with startAt: ${now}`);
+
+      if (!isConnected) {
+        // Update locally
+        const updatedJob = {
+          ...job,
+          sleepTracking: updatedSleepTracking,
+        };
+
+        await storageService.saveJob(updatedJob, false);
+        setJob(updatedJob);
+        const step = determineCurrentStep(updatedJob);
+        setCurrentStep(step);
+
+        // Save to offline queue
+        await syncService.addPendingAction({
+          jobId: job.id,
+          actionType: 'start',
+          actionData: JSON.stringify({ newCity }),
+          timestamp: now,
+        });
+        await checkPendingActions();
+        return;
+      }
+
+      // Send to server
+      const response = await apiClient.post<Job>(`/jobs/${job.id}/start-from-last`);
+      
+      console.log('✅ Started from last city successfully');
+      console.log('🔄 Updated job:', response);
+
+      if (!response || !response.id) {
+        console.log('⚠️ API returned empty, updating locally');
+        const localUpdatedJob = {
+          ...job,
+          sleepTracking: updatedSleepTracking,
+        };
+
+        await storageService.saveJob(localUpdatedJob, false);
+        setJob(localUpdatedJob);
+        const step = determineCurrentStep(localUpdatedJob);
+        setCurrentStep(step);
+      } else {
+        setJob(response);
+        await storageService.saveJob(response);
+        const step = determineCurrentStep(response);
+        setCurrentStep(step);
+      }
+    } catch (error: any) {
+      console.log('❌ Error starting from last city:', error);
+      Alert.alert('Error', 'Failed to start from last location. Please try again.');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const performStartAction = async () => {
@@ -386,13 +487,27 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
       console.log('▶️ Starting job:', job.id);
 
       if (!isConnected) {
-        // Update job locally
-        const updatedJob = await storageService.updateStartStatus(job.id);
-        if (updatedJob) {
-          setJob(updatedJob);
-          const step = determineCurrentStep(updatedJob);
-          setCurrentStep(step);
-        }
+        // Update job locally - set startAt on next city that doesn't have it
+        const updatedSleepTracking = job.sleepTracking?.map((entry: SleepTrackingEntry) => {
+          // Find first city without startAt
+          if (entry.startAt === null) {
+            return {
+              ...entry,
+              startAt: new Date().toISOString(),
+            };
+          }
+          return entry;
+        }) || [];
+
+        const updatedJob = {
+          ...job,
+          sleepTracking: updatedSleepTracking,
+        };
+
+        await storageService.saveJob(updatedJob, false);
+        setJob(updatedJob);
+        const step = determineCurrentStep(updatedJob);
+        setCurrentStep(step);
 
         // Save to offline queue
         await syncService.addPendingAction({
@@ -400,7 +515,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
           actionType: 'start',
           timestamp: new Date().toISOString(),
         });
-        // Alert.alert('Saved Offline', 'Job started locally. Will sync when online.');
         await checkPendingActions();
         return;
       }
@@ -412,13 +526,27 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
       // If API returns null/empty, update local job manually
       if (!updatedJob || !updatedJob.id) {
         console.log('⚠️ API returned empty response, updating local job manually');
-        const localUpdatedJob = await storageService.updateStartStatus(job.id);
-        if (localUpdatedJob) {
-          setJob(localUpdatedJob);
-          const step = determineCurrentStep(localUpdatedJob);
-          setCurrentStep(step);
-          console.log('📍 New step (local):', step);
-        }
+        const updatedSleepTracking = job.sleepTracking?.map((entry: SleepTrackingEntry) => {
+          // Find first city without startAt
+          if (entry.startAt === null) {
+            return {
+              ...entry,
+              startAt: new Date().toISOString(),
+            };
+          }
+          return entry;
+        }) || [];
+
+        const localUpdatedJob = {
+          ...job,
+          sleepTracking: updatedSleepTracking,
+        };
+
+        await storageService.saveJob(localUpdatedJob, false);
+        setJob(localUpdatedJob);
+        const step = determineCurrentStep(localUpdatedJob);
+        setCurrentStep(step);
+        console.log('📍 New step (local):', step);
       } else {
         setJob(updatedJob);
 
@@ -452,85 +580,110 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
       console.log('📊 ====== Initializing sleep tracking ======');
       console.log('Original job.sleepTracking:');
       job.sleepTracking.forEach((e: SleepTrackingEntry, i: number) => {
-        console.log(`  [${i}] ${e.city}: index=${e.index}, sleepAt=${e.sleepAt ? 'YES' : 'NO'}, isNew=${e.isNew}`);
+        console.log(`  [${i}] ${e.city}: index=${e.index}, sleepAt=${e.sleepAt ? 'YES' : 'NO'}, disabled=${e.disabled}`);
       });
       
-      const initialized = [...job.sleepTracking];
-      setLocalSleepTracking(initialized);
+      // 🔑 FULL sleepTracking - keep ALL cities (disabled + enabled)
+      const fullSleepTracking = [...job.sleepTracking];
       
-      console.log('Initialized localSleepTracking:');
-      initialized.forEach((e: SleepTrackingEntry, i: number) => {
-        console.log(`  [${i}] ${e.city}: index=${e.index}, sleepAt=${e.sleepAt ? 'YES' : 'NO'}, isNew=${e.isNew}`);
-      });
+      // Find disabled cities
+      const disabledCities = fullSleepTracking.filter((e: SleepTrackingEntry) => e.disabled === true);
+      
+      // For DISPLAY only: show last disabled city
+      let citiesToDisplay: SleepTrackingEntry[] = [];
+      const now = new Date().toISOString();
+      
+      if (disabledCities.length > 0) {
+        // Show only the last disabled city with checkbox CHECKED
+        const lastDisabledCity = disabledCities[disabledCities.length - 1];
+        console.log(`✅ Showing last disabled city for display: ${lastDisabledCity.city} (will be checked)`);
+        
+        citiesToDisplay = [{
+          ...lastDisabledCity,
+          sleepAt: lastDisabledCity.sleepAt || now, // ✅ Check the disabled city
+        }];
+      } else {
+        // No disabled cities - show first city with checkbox checked
+        const firstCity = fullSleepTracking[0];
+        if (firstCity) {
+          console.log(`✅ No disabled cities, showing first city: ${firstCity.city}`);
+          citiesToDisplay = [{
+            ...firstCity,
+            sleepAt: firstCity.sleepAt || now, // Check if not already checked
+          }];
+        }
+      }
+      
+      // ✅ Set FULL tracking (this will be sent to API)
+      setLocalSleepTracking(fullSleepTracking);
+      // 👀 Set DISPLAY tracking (only last disabled city shown to user)
+      setDisplaySleepTracking(citiesToDisplay);
+      
+      console.log(`📦 Full sleepTracking stored: ${fullSleepTracking.length} cities (will be sent to API)`);
+      console.log(`👀 Displaying for user: ${citiesToDisplay.length} city`);
       console.log('📊 ====== Initialization complete ======');
     } else {
       console.log('⚠️ No sleep tracking data found');
       setLocalSleepTracking([]);
+      setDisplaySleepTracking([]);
     }
 
-    openConfirmationModal(
-      'Confirm',
-      'Are you sure you want to sleep?',
-      () => {
-        setConfirmationModalVisible(false);
-        setShowModal(true);
-      },
-      'Confirm',
-    );
+    setShowModal(true);
   };
 
-  // Toggle local checkbox - controlled ONLY by disabled field
-  // When checking a city, update sleepAt for ALL checked non-disabled cities
+  // Toggle local checkbox - updates both display and full tracking
   const handleCheckboxToggle = (targetIndex: number) => {
     const now = new Date().toISOString();
     
-    setLocalSleepTracking(prev => {
-      console.log('📋 Current state BEFORE toggle:');
+    // Update display tracking
+    setDisplaySleepTracking(prev => {
+      console.log('📋 Current display state BEFORE toggle:');
       
-      // First, determine if we're checking or unchecking the target
       const targetEntry = prev.find(e => e.index === targetIndex);
       const isCheckingTarget = targetEntry?.sleepAt === null;
       
-      const updated = prev.map((entry, mapIndex) => {
+      const updated = prev.map((entry) => {
         // Check if this entry is explicitly disabled
         if (entry.disabled === true) {
           console.log(`  🚫 ${entry.city} is disabled, skipping`);
           return entry;
         }
 
-        // If clicking on THIS checkbox to CHECK it
-        if (entry.index === targetIndex && entry.sleepAt === null) {
-          console.log(`  ✅ CHECKING ${entry.city}`);
-          return { ...entry, sleepAt: now };
-        }
-
-        // If clicking on THIS checkbox to UNCHECK it
-        if (entry.index === targetIndex && entry.sleepAt !== null) {
-          console.log(`  ⬜ UNCHECKING ${entry.city}`);
-          return { ...entry, sleepAt: null };
-        }
-
-        // 🔄 Auto-check all previous unchecked cities when checking a later one
-        if (entry.index < targetIndex && entry.sleepAt === null && isCheckingTarget) {
-          console.log(`  🔄 AUTO-CHECKING ${entry.city}`);
-          return { ...entry, sleepAt: now };
+        // Toggle the target
+        if (entry.index === targetIndex) {
+          if (entry.sleepAt === null) {
+            console.log(`  ✅ CHECKING ${entry.city}`);
+            return { ...entry, sleepAt: now };
+          } else {
+            console.log(`  ⬜ UNCHECKING ${entry.city}`);
+            return { ...entry, sleepAt: null };
+          }
         }
         
-        // 🕐 Update sleepAt for ALL currently checked non-disabled cities when checking target
-        if (isCheckingTarget && entry.sleepAt !== null && entry.index !== targetIndex) {
+        // Update sleepAt for checked cities
+        if (isCheckingTarget && entry.sleepAt !== null) {
           console.log(`  🕐 UPDATING sleepAt for ${entry.city}`);
           return { ...entry, sleepAt: now };
         }
 
-        console.log(`  ➡️ No change for ${entry.city}`);
         return entry;
       });
 
-      // ✅ IMPORTANT: Recalculate ALL indices based on array position
-      return updated.map((entry, arrayIndex) => ({
-        ...entry,
-        index: arrayIndex,
-      }));
+      return updated;
+    });
+    
+    // Also update the full localSleepTracking to keep them in sync
+    setLocalSleepTracking(prev => {
+      return prev.map(entry => {
+        if (entry.index === targetIndex) {
+          if (entry.sleepAt === null) {
+            return { ...entry, sleepAt: now };
+          } else {
+            return { ...entry, sleepAt: null };
+          }
+        }
+        return entry;
+      });
     });
   };
 
@@ -576,7 +729,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
         .map(entry => entry.index);
 
       // Calculate sleepCount dynamically based on newly checked cities
-      const sleepCount = newlyCheckedIndices.length;
+      const sleepCount = Math.max(newlyCheckedIndices.length, 1); // Ensure at least 1
+      
+      console.log(`📊 Sleep count: ${sleepCount}, newly checked indices:`, newlyCheckedIndices);
+      
       // Call API with all data
       const updatedJob = await apiClient.post<Job>(`/jobs/${job.id}/sleep`, {
         country: country,
@@ -615,53 +771,36 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
 
     const now = new Date().toISOString();
 
+    // Update full localSleepTracking
     setLocalSleepTracking(prev => {
-      // 1️⃣ Find the last element that has sleepAt !== null
-      const lastCheckedIndex = prev.findLastIndex(e => e.sleepAt !== null);
-      
-      // If no checked items exist, insert at position 0
-      // If checked items exist, insert right after the last checked one
-      const insertPosition = lastCheckedIndex === -1 ? 0 : lastCheckedIndex + 1;
-
-      // 2️⃣ Create new entry with checked state (sleepAt = now)
       const newEntry: SleepTrackingEntry = {
-        index: -1, // will be recalculated
+        index: prev.length, // Append to end
         city: newCityName.trim().toLowerCase(),
         country: null,
+        startAt: null,
         sleepAt: now, // ✅ Auto-checked when added
         sleepCount: 0,
         isNew: true,
         disabled: false,
       };
 
-      // 3️⃣ Build new array by inserting at correct position
-      const updated = [
-        ...prev.slice(0, insertPosition),
-        newEntry,
-        ...prev.slice(insertPosition),
-      ];
+      return [...prev, newEntry];
+    });
+    
+    // Update display tracking (add to display)
+    setDisplaySleepTracking(prev => {
+      const newEntry: SleepTrackingEntry = {
+        index: localSleepTracking.length, // Use current length for correct index
+        city: newCityName.trim().toLowerCase(),
+        country: null,
+        startAt: null,
+        sleepAt: now, // ✅ Auto-checked when added
+        sleepCount: 0,
+        isNew: true,
+        disabled: false,
+      };
 
-      // 4️⃣ Update sleepAt for ALL checked non-disabled cities
-      const finalUpdated = updated.map(entry => {
-        // Skip disabled cities
-        if (entry.disabled === true) {
-          return entry;
-        }
-        
-        // Update sleepAt for all checked cities (including the new one)
-        if (entry.sleepAt !== null) {
-          console.log(`  🕐 UPDATING sleepAt for ${entry.city}`);
-          return { ...entry, sleepAt: now };
-        }
-        
-        return entry;
-      });
-
-      // 5️⃣ Recalculate all indices based on new array order
-      return finalUpdated.map((entry, index) => ({
-        ...entry,
-        index,
-      }));
+      return [...prev, newEntry];
     });
 
     setNewCityName('');
@@ -718,15 +857,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
       return;
     }
 
-    openConfirmationModal(
-      'Complete Job',
-      'Are you sure you want to complete this job?',
-      async () => {
-        setConfirmationModalVisible(false);
-        await performFinishAction();
-      },
-      'Complete',
-    );
+    await performFinishAction();
   };
 
   const performFinishAction = async () => {
@@ -1012,17 +1143,30 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
 
       case 'start':
         return (
-          <TouchableOpacity
-            style={[styles.startButton, actionLoading && styles.buttonDisabled]}
-            onPress={handleStart}
-            disabled={actionLoading}
-          >
-            {actionLoading ? (
-              <ActivityIndicator color={colors.white} />
-            ) : (
-              <Text style={styles.buttonText}>Start Job</Text>
-            )}
-          </TouchableOpacity>
+          <View style={styles.twoButtonsRow}>
+            <TouchableOpacity
+              style={[styles.startButton, styles.halfButton, actionLoading && styles.buttonDisabled]}
+              onPress={handleStartFromLastCity}
+              disabled={actionLoading}
+            >
+              {actionLoading ? (
+                <ActivityIndicator color={colors.white} />
+              ) : (
+                <Text style={styles.buttonText}>Start</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.finishButton, styles.halfButton, actionLoading && styles.buttonDisabled]}
+              onPress={handleFinish}
+              disabled={actionLoading}
+            >
+              {actionLoading ? (
+                <ActivityIndicator color={colors.white} />
+              ) : (
+                <Text style={styles.buttonText}>End Job</Text>
+              )}
+            </TouchableOpacity>
+          </View>
         );
 
       case 'sleep':
@@ -1050,19 +1194,32 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
         );
 
       case 'finish':
-        return (
-          <TouchableOpacity
-            style={[styles.finishButton, actionLoading && styles.buttonDisabled]}
-            onPress={handleFinish}
-            disabled={actionLoading}
-          >
-            {actionLoading ? (
-              <ActivityIndicator color={colors.white} />
-            ) : (
-              <Text style={styles.buttonText}>Complete Job</Text>
-            )}
-          </TouchableOpacity>
-        );
+            return (
+                <View style={styles.twoButtonsRow}>
+                    <TouchableOpacity
+                        style={[styles.startButton, styles.halfButton, actionLoading && styles.buttonDisabled]}
+                        onPress={handleStartFromLastCity}
+                        disabled={actionLoading}
+                    >
+                        {actionLoading ? (
+                            <ActivityIndicator color={colors.white} />
+                        ) : (
+                            <Text style={styles.buttonText}>Start</Text>
+                        )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.finishButton, styles.halfButton, actionLoading && styles.buttonDisabled]}
+                        onPress={handleFinish}
+                        disabled={actionLoading}
+                    >
+                        {actionLoading ? (
+                            <ActivityIndicator color={colors.white} />
+                        ) : (
+                            <Text style={styles.buttonText}>End Job</Text>
+                        )}
+                    </TouchableOpacity>
+                </View>
+            );
 
       default:
         return null;
@@ -1256,19 +1413,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
                 <Text style={styles.modalTitle}>Where did you sleep?</Text>
                 <Text style={styles.modalSubtitle}>Select the city from your route</Text>
 
-                {/* 🆕 Add New City Button */}
-                <TouchableOpacity
-                  style={styles.addCityButton}
-                  onPress={() => setShowAddCityInput(!showAddCityInput)}
-                >
-                  <Text style={styles.addCityButtonText}>
-                    {showAddCityInput ? '- Cancel' : '+ Add Custom City'}
-                  </Text>
-                </TouchableOpacity>
-
                 {/* 🆕 New City Input (shown only when showAddCityInput is true) */}
-                {showAddCityInput && (
-                  <View style={styles.newCityInputContainer}>
+                <View style={styles.newCityInputContainer}>
                     <TextInput
                       style={styles.newCityInput}
                       placeholder="Enter city name..."
@@ -1283,7 +1429,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
                       <Text style={styles.addCityConfirmButtonText}>Add</Text>
                     </TouchableOpacity>
                   </View>
-                )}
+
 
                 <ScrollView
                   style={styles.sleepTrackingList}
@@ -1291,8 +1437,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
                   showsVerticalScrollIndicator={true}
                   nestedScrollEnabled={true}
                 >
-                  {localSleepTracking && localSleepTracking.length > 0 ? (
-                    localSleepTracking.map((entry: SleepTrackingEntry, arrayIndex: number) => {
+                  {displaySleepTracking && displaySleepTracking.length > 0 ? (
+                    displaySleepTracking.map((entry: SleepTrackingEntry, arrayIndex: number) => {
                       // Is it a NEW city added via input?
                       const isNewCity = entry.isNew === true;
 
@@ -1362,13 +1508,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
                     )}
                     </ScrollView>
 
-                    {/* Warning message if no cities are checked */}
-              {localSleepTracking.length > 0 && !localSleepTracking.some(e => e.sleepAt !== null && e.disabled !== true) && (
-                <View style={styles.warningContainer}>
-                  <Text style={styles.warningIcon}>⚠️</Text>
-                  <Text style={styles.warningText}>Please check at least one city to continue</Text>
-                </View>
-              )}
 
               {/* Country Buttons - Submit */}
                 <View style={styles.countryButtonsContainer}>
@@ -1376,10 +1515,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
                     style={[
                       styles.countryButton,
                       styles.swedenButton,
-                      (actionLoading || !localSleepTracking.some(e => e.sleepAt !== null && e.disabled !== true)) && styles.buttonDisabled
+                      (actionLoading || !displaySleepTracking.some(e => e.sleepAt !== null && e.disabled !== true)) && styles.buttonDisabled
                     ]}
                     onPress={() => handleSleepSubmit('sweden')}
-                    disabled={actionLoading || !localSleepTracking.some(e => e.sleepAt !== null && e.disabled !== true)}
+                    disabled={actionLoading || !displaySleepTracking.some(e => e.sleepAt !== null && e.disabled !== true)}
                   >
                     {actionLoading ? (
                       <ActivityIndicator color={colors.white} size="small" />
@@ -1395,10 +1534,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
                     style={[
                       styles.countryButton,
                       styles.norwayButton,
-                      (actionLoading || !localSleepTracking.some(e => e.sleepAt !== null && e.disabled !== true)) && styles.buttonDisabled
+                      (actionLoading || !displaySleepTracking.some(e => e.sleepAt !== null && e.disabled !== true)) && styles.buttonDisabled
                     ]}
                     onPress={() => handleSleepSubmit('norway')}
-                    disabled={actionLoading || !localSleepTracking.some(e => e.sleepAt !== null && e.disabled !== true)}
+                    disabled={actionLoading || !displaySleepTracking.some(e => e.sleepAt !== null && e.disabled !== true)}
                   >
                     {actionLoading ? (
                       <ActivityIndicator color={colors.white} size="small" />
@@ -1419,14 +1558,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
               </View>
             </View>
           </Modal>
-          <ConfirmationModal
-            visible={confirmationModalVisible}
-            title={confirmationConfig.title}
-            message={confirmationConfig.message}
-            onCancel={() => setConfirmationModalVisible(false)}
-            onConfirm={confirmationConfig.onConfirm}
-            confirmText={confirmationConfig.confirmText}
-          />
 
           {/* Offline Warning Modal */}
           <OfflineWarningModal

@@ -314,6 +314,31 @@
         }
       }
     },
+    "react-native-vector-icons": {
+      "root": "C:\\Users\\hp\\Desktop\\iron_wheels\\node_modules\\react-native-vector-icons",
+      "name": "react-native-vector-icons",
+      "platforms": {
+        "ios": {
+          "podspecPath": "C:\\Users\\hp\\Desktop\\iron_wheels\\node_modules\\react-native-vector-icons\\RNVectorIcons.podspec",
+          "version": "10.3.0",
+          "configurations": [],
+          "scriptPhases": []
+        },
+        "android": {
+          "sourceDir": "C:\\Users\\hp\\Desktop\\iron_wheels\\node_modules\\react-native-vector-icons\\android",
+          "packageImportPath": "import com.oblador.vectoricons.VectorIconsPackage;",
+          "packageInstance": "new VectorIconsPackage()",
+          "buildTypes": [],
+          "libraryName": "RNVectorIconsSpec",
+          "componentDescriptors": [],
+          "cmakeListsPath": "C:/Users/hp/Desktop/iron_wheels/node_modules/react-native-vector-icons/android/build/generated/source/codegen/jni/CMakeLists.txt",
+          "cxxModuleCMakeListsModuleName": null,
+          "cxxModuleCMakeListsPath": null,
+          "cxxModuleHeaderName": null,
+          "isPureCxxDependency": false
+        }
+      }
+    },
     "react-native-worklets": {
       "root": "C:\\Users\\hp\\Desktop\\iron_wheels\\node_modules\\react-native-worklets",
       "name": "react-native-worklets",
